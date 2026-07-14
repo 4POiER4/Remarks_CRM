@@ -8,6 +8,7 @@ import {
   Department,
   Letter,
   LetterFormData,
+  Notification,
   ProjectObject,
   Remark,
   RemarkFormData,
@@ -90,6 +91,9 @@ export default function App() {
   const [selectedRemark, setSelectedRemark] = useState<Remark | null>(null);
   const [assignDepartmentId, setAssignDepartmentId] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
+  const [executorDueDate, setExecutorDueDate] = useState("");
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -148,6 +152,20 @@ export default function App() {
     }
   };
 
+  const loadNotifications = async () => {
+    try {
+      const [items, countData] = await Promise.all([
+        api.getNotifications(true),
+        api.getUnreadNotificationsCount(),
+      ]);
+      setNotifications(items);
+      setUnreadNotifications(countData.count);
+    } catch {
+      setNotifications([]);
+      setUnreadNotifications(0);
+    }
+  };
+
   const refreshCurrent = async () => {
     await loadObjects();
     if (selectedObjectId) {
@@ -162,6 +180,7 @@ export default function App() {
     if (user) {
       void loadObjects();
       void api.getStats().then(setStats).catch(() => undefined);
+      void loadNotifications();
     }
   }, [user]);
 
@@ -258,6 +277,7 @@ export default function App() {
       await api.assignDepartment(selectedRemark.id, Number(assignDepartmentId));
       setModalMode(null);
       setSuccess("Отдел назначен");
+      await loadNotifications();
       if (selectedLetterId) await loadLetterDetail(selectedLetterId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка назначения");
@@ -270,8 +290,9 @@ export default function App() {
       return;
     }
     try {
-      await api.assignExecutor(selectedRemark.id, Number(assigneeId));
+      await api.assignExecutor(selectedRemark.id, Number(assigneeId), executorDueDate);
       setModalMode(null);
+      setExecutorDueDate("");
       setSuccess("Исполнитель назначен");
       if (selectedLetterId) await loadLetterDetail(selectedLetterId);
     } catch (err) {
@@ -286,6 +307,15 @@ export default function App() {
       if (selectedLetterId) await loadLetterDetail(selectedLetterId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка смены статуса");
+    }
+  };
+
+  const markAllNotificationsRead = async () => {
+    try {
+      await api.markAllNotificationsRead();
+      await loadNotifications();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ошибка обновления уведомлений");
     }
   };
 
@@ -419,6 +449,25 @@ export default function App() {
             Без исполнителя: <strong>{stats.no_executor}</strong>
           </span>
         </div>
+      ) : null}
+
+      {unreadNotifications > 0 ? (
+        <section className="notifications-panel">
+          <div className="notifications-header">
+            <strong>Новые уведомления: {unreadNotifications}</strong>
+            <button className="btn btn-secondary btn-small" onClick={() => void markAllNotificationsRead()}>
+              Отметить прочитанными
+            </button>
+          </div>
+          <ul className="notifications-list">
+            {notifications.map((notification) => (
+              <li key={notification.id}>
+                <span>{notification.message}</span>
+                <small>{formatDate(notification.created_at)}</small>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
 
       <div className="hierarchy-layout">
@@ -660,6 +709,10 @@ export default function App() {
                             <span>Исполнитель</span>
                             {remark.assignee?.display_name || "Не назначен"}
                           </div>
+                          <div className="meta-item">
+                            <span>Срок исполнения</span>
+                            {formatDate(remark.due_date)}
+                          </div>
                         </div>
 
                         <div className="card-actions">
@@ -699,6 +752,7 @@ export default function App() {
                               onClick={() => {
                                 setSelectedRemark(remark);
                                 setAssigneeId(remark.assignee_id ? String(remark.assignee_id) : "");
+                                setExecutorDueDate(remark.due_date ? remark.due_date.slice(0, 10) : "");
                                 setModalMode("assign-executor");
                                 void api
                                   .getUsers(remark.department_id ?? undefined)
@@ -886,6 +940,15 @@ export default function App() {
               <DepartmentOptions departments={departments} />
             </select>
           </div>
+          <div className="field">
+            <label htmlFor="executorDueDate">Срок исполнения</label>
+            <input
+              id="executorDueDate"
+              type="date"
+              value={executorDueDate}
+              onChange={(event) => setExecutorDueDate(event.target.value)}
+            />
+          </div>
         </Modal>
       ) : null}
 
@@ -908,7 +971,7 @@ export default function App() {
             <label>Исполнитель</label>
             <select value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}>
               <option value="">Выберите</option>
-              {departmentUsers.map((item) => (
+              {departmentUsers.filter((item) => item.role === "employee").map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.display_name}
                 </option>

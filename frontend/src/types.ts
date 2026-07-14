@@ -158,6 +158,7 @@ export interface Remark {
   assigned_at: string | null;
   assignee_assigned_by: string | null;
   assignee_assigned_at: string | null;
+  due_date: string | null;
   resolution_notes: string | null;
   created_at: string;
   updated_at: string;
@@ -201,6 +202,17 @@ export interface ImportJob {
   errors: string[];
   created_at: string | null;
   finished_at: string | null;
+}
+
+export interface Notification {
+  id: number;
+  user_id: number;
+  remark_id: number | null;
+  type: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+  read_at: string | null;
 }
 
 export interface PaginatedResponse<T> {

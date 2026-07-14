@@ -7,6 +7,7 @@ import type {
   LetterAttachment,
   LetterFormData,
   LoginResponse,
+  Notification,
   ObjectFormData,
   PaginatedResponse,
   ProjectObject,
@@ -256,11 +257,25 @@ export const api = {
       body: JSON.stringify({ department_id, status: "in_progress" }),
     }),
 
-  assignExecutor: (id: number, assignee_id: number) =>
+  assignExecutor: (id: number, assignee_id: number, due_date?: string) =>
     request<Remark>(`${API}/remarks/${id}/assign-executor`, {
       method: "POST",
-      body: JSON.stringify({ assignee_id }),
+      body: JSON.stringify({ assignee_id, due_date: due_date || null }),
     }),
+
+  getNotifications: (unreadOnly = false) => {
+    const query = unreadOnly ? "?unread_only=true" : "";
+    return request<Notification[]>(`${API}/notifications${query}`);
+  },
+
+  getUnreadNotificationsCount: () =>
+    request<{ count: number }>(`${API}/notifications/unread-count`),
+
+  markNotificationRead: (id: number) =>
+    request<Notification>(`${API}/notifications/${id}/read`, { method: "PATCH" }),
+
+  markAllNotificationsRead: () =>
+    request<{ updated: number }>(`${API}/notifications/mark-all-read`, { method: "POST" }),
 
   updateStatus: (id: number, status: string, resolution_notes?: string) =>
     request<Remark>(`${API}/remarks/${id}/status`, {

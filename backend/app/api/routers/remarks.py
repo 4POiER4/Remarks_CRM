@@ -13,7 +13,7 @@ from app.auth import (
 from app.core.cache import cache_get, cache_set, invalidate_remarks_cache
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.models.models import Department, Letter, ProjectObject, Remark, RemarkStatus, User, UserRole
+from app.models.models import Department, Letter, Notification, ProjectObject, Remark, RemarkStatus, User, UserRole
 from app.schemas.schemas import (
   PaginatedResponse,
   RemarkAssignDepartment,
@@ -199,6 +199,25 @@ def assign_department(
   remark.assignee_id = None
   remark.assignee_assigned_by = None
   remark.assignee_assigned_at = None
+  remark.due_date = None
+  department_heads = (
+    db.query(User)
+    .filter(
+      User.department_id == payload.department_id,
+      User.role == UserRole.DEPARTMENT_HEAD.value,
+      User.is_active.is_(True),
+    )
+    .all()
+  )
+  for department_head in department_heads:
+    db.add(
+      Notification(
+        user_id=department_head.id,
+        remark_id=remark.id,
+        type="department_assigned",
+        message=f"На отдел {department.code} назначено замечание #{remark.id}",
+      )
+    )
   db.commit()
   invalidate_remarks_cache()
   return remark_to_read(fetch_remark(db, remark_id))
@@ -219,7 +238,15 @@ def assign_executor(
   if not can_assign_executor(user, remark.department_id):
     raise HTTPException(status_code=403, detail="Недостаточно прав для назначения исполнителя")
 
-  assignee = db.query(User).filter(User.id == payload.assignee_id, User.is_active.is_(True)).first()
+  assignee = (
+    db.query(User)
+    .filter(
+      User.id == payload.assignee_id,
+      User.role == UserRole.EMPLOYEE.value,
+      User.is_active.is_(True),
+    )
+    .first()
+  )
   if not assignee:
     raise HTTPException(status_code=404, detail="Исполнитель не найден")
   if assignee.department_id != remark.department_id:
@@ -228,6 +255,7 @@ def assign_executor(
   remark.assignee_id = payload.assignee_id
   remark.assignee_assigned_by = user.display_name
   remark.assignee_assigned_at = datetime.utcnow()
+  remark.due_date = payload.due_date
   remark.status = RemarkStatus.IN_PROGRESS.value
   db.commit()
   invalidate_remarks_cache()

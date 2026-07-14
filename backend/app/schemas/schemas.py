@@ -194,6 +194,7 @@ class RemarkAssignDepartment(BaseModel):
 
 class RemarkAssignExecutor(BaseModel):
   assignee_id: int
+  due_date: date | None = None
 
 
 class RemarkStatusUpdate(BaseModel):
@@ -225,6 +226,7 @@ class RemarkRead(BaseModel):
   assigned_at: datetime | None = None
   assignee_assigned_by: str | None = None
   assignee_assigned_at: datetime | None = None
+  due_date: date | None = None
   resolution_notes: str | None = None
   created_at: datetime
   updated_at: datetime
@@ -262,3 +264,16 @@ class HealthResponse(BaseModel):
   database: str
   cache: str
   version: str
+
+
+class NotificationRead(BaseModel):
+  model_config = ConfigDict(from_attributes=True)
+
+  id: int
+  user_id: int
+  remark_id: int | None = None
+  type: str
+  message: str
+  is_read: bool
+  created_at: datetime
+  read_at: datetime | None = None

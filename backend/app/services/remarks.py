@@ -81,6 +81,7 @@ def remark_to_read(remark: Remark) -> RemarkRead:
     assigned_at=remark.assigned_at,
     assignee_assigned_by=remark.assignee_assigned_by,
     assignee_assigned_at=remark.assignee_assigned_at,
+    due_date=remark.due_date,
     resolution_notes=remark.resolution_notes,
     created_at=remark.created_at,
     updated_at=remark.updated_at,

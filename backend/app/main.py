@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import auth, departments, health, import_stats, letters, objects, remarks, users
+from app.api.routers import auth, departments, health, import_stats, letters, notifications, objects, remarks, users
 from app.core.config import get_settings
 from app.core.database import Base, engine, get_db
 from app.seed import migrate_hierarchy, migrate_schema, migrate_statuses, seed_admin_user, seed_default_departments
@@ -47,6 +47,7 @@ def create_app() -> FastAPI:
   app.include_router(objects.router)
   app.include_router(letters.router)
   app.include_router(remarks.router)
+  app.include_router(notifications.router)
   app.include_router(import_stats.router)
 
   return app

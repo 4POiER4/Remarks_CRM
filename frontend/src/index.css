@@ -297,6 +297,42 @@ button {
   font-weight: 700;
 }
 
+.notifications-panel {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+}
+
+.notifications-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.notifications-list {
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+.notifications-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text);
+}
+
+.notifications-list small {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .stat-card {
   background: var(--surface);
   border: 1px solid var(--border);

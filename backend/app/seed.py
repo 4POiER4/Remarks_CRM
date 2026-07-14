@@ -48,6 +48,47 @@ def migrate_schema() -> None:
     return
 
   with engine.begin() as connection:
+    if not _table_columns("notifications"):
+      if engine.dialect.name == "sqlite":
+        connection.exec_driver_sql(
+          """
+          CREATE TABLE notifications (
+            id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            remark_id INTEGER REFERENCES remarks(id),
+            type VARCHAR(50) NOT NULL,
+            message VARCHAR(500) NOT NULL,
+            is_read BOOLEAN DEFAULT 0 NOT NULL,
+            created_at DATETIME NOT NULL,
+            read_at DATETIME,
+            PRIMARY KEY (id)
+          )
+          """
+        )
+        connection.exec_driver_sql("CREATE INDEX ix_notifications_user_id ON notifications (user_id)")
+        connection.exec_driver_sql("CREATE INDEX ix_notifications_remark_id ON notifications (remark_id)")
+        connection.exec_driver_sql("CREATE INDEX ix_notifications_type ON notifications (type)")
+        connection.exec_driver_sql("CREATE INDEX ix_notifications_is_read ON notifications (is_read)")
+        connection.exec_driver_sql("CREATE INDEX ix_notifications_created_at ON notifications (created_at)")
+        connection.exec_driver_sql(
+          "CREATE INDEX ix_notifications_user_read_created ON notifications (user_id, is_read, created_at)"
+        )
+      else:
+        connection.exec_driver_sql(
+          """
+          CREATE TABLE notifications (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            remark_id INTEGER REFERENCES remarks(id),
+            type VARCHAR(50) NOT NULL,
+            message VARCHAR(500) NOT NULL,
+            is_read BOOLEAN DEFAULT FALSE NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            read_at TIMESTAMP
+          )
+          """
+        )
+
     if engine.dialect.name == "sqlite":
       object_columns = _table_columns("objects")
       if object_columns and "subobject_name" not in object_columns:
@@ -105,6 +146,7 @@ def migrate_schema() -> None:
         "assignee_id": "INTEGER REFERENCES users(id)",
         "assignee_assigned_by": "VARCHAR(255)",
         "assignee_assigned_at": "DATETIME",
+        "due_date": "DATE",
         "letter_id": "INTEGER REFERENCES letters(id)",
       }
       for column, column_type in remark_migrations.items():
@@ -114,6 +156,8 @@ def migrate_schema() -> None:
       object_columns = _table_columns("objects")
       if object_columns and "subobject_name" not in object_columns:
         connection.exec_driver_sql("ALTER TABLE objects ADD COLUMN subobject_name VARCHAR(255)")
+      if "due_date" not in remark_columns:
+        connection.exec_driver_sql("ALTER TABLE remarks ADD COLUMN due_date DATE")
       if "letter_id" not in remark_columns:
         connection.exec_driver_sql(
           "ALTER TABLE remarks ADD COLUMN letter_id INTEGER REFERENCES letters(id)"

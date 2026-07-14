@@ -116,6 +116,25 @@ class LetterAttachment(Base):
   letter: Mapped[Letter] = relationship(back_populates="attachments")
 
 
+class Notification(Base):
+  __tablename__ = "notifications"
+  __table_args__ = (
+    Index("ix_notifications_user_read_created", "user_id", "is_read", "created_at"),
+  )
+
+  id: Mapped[int] = mapped_column(primary_key=True)
+  user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+  remark_id: Mapped[int | None] = mapped_column(ForeignKey("remarks.id"), index=True)
+  type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+  message: Mapped[str] = mapped_column(String(500), nullable=False)
+  is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+  created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+  read_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+  user: Mapped[User] = relationship()
+  remark: Mapped["Remark | None"] = relationship()
+
+
 class Remark(Base):
   __tablename__ = "remarks"
   __table_args__ = (
@@ -139,6 +158,7 @@ class Remark(Base):
   assigned_at: Mapped[datetime | None] = mapped_column(DateTime)
   assignee_assigned_by: Mapped[str | None] = mapped_column(String(255))
   assignee_assigned_at: Mapped[datetime | None] = mapped_column(DateTime)
+  due_date: Mapped[date | None] = mapped_column(Date, index=True)
   resolution_notes: Mapped[str | None] = mapped_column(Text)
 
   created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
