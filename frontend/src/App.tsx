@@ -39,6 +39,7 @@ type ModalMode =
   | "edit-remark"
   | "assign-department"
   | "assign-executor"
+  | "submit-result"
   | "import"
   | null;
 
@@ -75,6 +76,8 @@ export default function App() {
   const [selectedLetterId, setSelectedLetterId] = useState<number | null>(null);
   const [letterDetail, setLetterDetail] = useState<Letter | null>(null);
   const [remarks, setRemarks] = useState<Remark[]>([]);
+  const [departmentPendingRemarks, setDepartmentPendingRemarks] = useState<Remark[]>([]);
+  const [myTasks, setMyTasks] = useState<Remark[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [departmentUsers, setDepartmentUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -82,6 +85,8 @@ export default function App() {
   const [loadingObjects, setLoadingObjects] = useState(false);
   const [loadingLetters, setLoadingLetters] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [loadingDepartmentPending, setLoadingDepartmentPending] = useState(false);
+  const [loadingMyTasks, setLoadingMyTasks] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [modalMode, setModalMode] = useState<ModalMode>(null);
@@ -92,6 +97,7 @@ export default function App() {
   const [assignDepartmentId, setAssignDepartmentId] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
   const [executorDueDate, setExecutorDueDate] = useState("");
+  const [resultNotes, setResultNotes] = useState("");
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -107,6 +113,8 @@ export default function App() {
   const showAssignDepartment = user ? canAssignDepartment(user.role) : false;
   const showAssignExecutor = user ? canAssignExecutor(user.role) : false;
   const showAdmin = user ? canManageDepartments(user.role) : false;
+  const showDepartmentHeadTasks = user?.role === "department_head";
+  const showMyTasks = user?.role === "employee";
 
   const loadObjects = async (search = objectSearch) => {
     setLoadingObjects(true);
@@ -152,6 +160,38 @@ export default function App() {
     }
   };
 
+  const loadDepartmentPendingRemarks = async () => {
+    if (!showDepartmentHeadTasks) {
+      setDepartmentPendingRemarks([]);
+      return;
+    }
+    setLoadingDepartmentPending(true);
+    try {
+      const data = await api.getRemarks({ no_executor: true, page_size: 200 });
+      setDepartmentPendingRemarks(data.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось загрузить задачи отдела");
+    } finally {
+      setLoadingDepartmentPending(false);
+    }
+  };
+
+  const loadMyTasks = async () => {
+    if (!showMyTasks || !user) {
+      setMyTasks([]);
+      return;
+    }
+    setLoadingMyTasks(true);
+    try {
+      const data = await api.getRemarks({ assignee_id: user.id, page_size: 200 });
+      setMyTasks(data.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось загрузить мои задачи");
+    } finally {
+      setLoadingMyTasks(false);
+    }
+  };
+
   const loadNotifications = async () => {
     try {
       const [items, countData] = await Promise.all([
@@ -174,6 +214,8 @@ export default function App() {
     if (selectedLetterId) {
       await loadLetterDetail(selectedLetterId);
     }
+    await loadDepartmentPendingRemarks();
+    await loadMyTasks();
   };
 
   useEffect(() => {
@@ -181,6 +223,8 @@ export default function App() {
       void loadObjects();
       void api.getStats().then(setStats).catch(() => undefined);
       void loadNotifications();
+      void loadDepartmentPendingRemarks();
+      void loadMyTasks();
     }
   }, [user]);
 
@@ -278,6 +322,8 @@ export default function App() {
       setModalMode(null);
       setSuccess("Отдел назначен");
       await loadNotifications();
+      await loadDepartmentPendingRemarks();
+      await loadMyTasks();
       if (selectedLetterId) await loadLetterDetail(selectedLetterId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка назначения");
@@ -294,6 +340,8 @@ export default function App() {
       setModalMode(null);
       setExecutorDueDate("");
       setSuccess("Исполнитель назначен");
+      await loadDepartmentPendingRemarks();
+      await loadMyTasks();
       if (selectedLetterId) await loadLetterDetail(selectedLetterId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка назначения");
@@ -310,6 +358,51 @@ export default function App() {
     }
   };
 
+  const submitTaskResult = async () => {
+    if (!selectedRemark) return;
+    try {
+      await api.updateStatus(selectedRemark.id, "pending_review", resultNotes.trim() || undefined);
+      setModalMode(null);
+      setResultNotes("");
+      setSuccess("Задача отправлена на рассмотрение");
+      await loadMyTasks();
+      if (selectedLetterId) await loadLetterDetail(selectedLetterId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось отправить результат");
+    }
+  };
+
+  const getDueState = (dueDate: string | null): "none" | "ok" | "soon" | "overdue" => {
+    if (!dueDate) return "none";
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(dueDate);
+    due.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((due.getTime() - today.getTime()) / 86400000);
+    if (diffDays < 0) return "overdue";
+    if (diffDays <= 2) return "soon";
+    return "ok";
+  };
+
+  const getDueLabel = (dueDate: string | null): string => {
+    const state = getDueState(dueDate);
+    if (state === "none") return "Срок не указан";
+    if (state === "overdue") return `Просрочено: ${formatDate(dueDate)}`;
+    if (state === "soon") return `Скоро: ${formatDate(dueDate)}`;
+    return `Срок: ${formatDate(dueDate)}`;
+  };
+
+  const setMyTaskInProgress = async (remark: Remark) => {
+    try {
+      await api.updateStatus(remark.id, "in_progress", remark.resolution_notes ?? undefined);
+      setSuccess("Задача в работе");
+      await loadMyTasks();
+      if (selectedLetterId) await loadLetterDetail(selectedLetterId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось обновить задачу");
+    }
+  };
+
   const markAllNotificationsRead = async () => {
     try {
       await api.markAllNotificationsRead();
@@ -317,6 +410,39 @@ export default function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка обновления уведомлений");
     }
+  };
+
+  const openDepartmentTask = (remark: Remark) => {
+    if (remark.letter?.object_id) {
+      setSelectedObjectId(remark.letter.object_id);
+    }
+    if (remark.letter_id) {
+      setSelectedLetterId(remark.letter_id);
+    }
+  };
+
+  const openNotification = async (notification: Notification) => {
+    try {
+      if (notification.remark_id) {
+        const remark = await api.getRemark(notification.remark_id);
+        openDepartmentTask(remark);
+      }
+      await api.markNotificationRead(notification.id);
+      await loadNotifications();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось открыть уведомление");
+    }
+  };
+
+  const startAssignExecutor = (remark: Remark) => {
+    setSelectedRemark(remark);
+    setAssigneeId(remark.assignee_id ? String(remark.assignee_id) : "");
+    setExecutorDueDate(remark.due_date ? remark.due_date.slice(0, 10) : "");
+    setModalMode("assign-executor");
+    void api
+      .getUsers(remark.department_id ?? undefined)
+      .then(setDepartmentUsers)
+      .catch(() => undefined);
   };
 
   const removeRemark = async (remark: Remark) => {
@@ -462,11 +588,129 @@ export default function App() {
           <ul className="notifications-list">
             {notifications.map((notification) => (
               <li key={notification.id}>
-                <span>{notification.message}</span>
+                <button
+                  className="notification-link"
+                  type="button"
+                  onClick={() => void openNotification(notification)}
+                >
+                  {notification.message}
+                </button>
                 <small>{formatDate(notification.created_at)}</small>
               </li>
             ))}
           </ul>
+        </section>
+      ) : null}
+
+      {showDepartmentHeadTasks ? (
+        <section className="department-tasks-panel">
+          <div className="department-tasks-header">
+            <div>
+              <strong>Требуют назначения исполнителя</strong>
+              <span>{departmentPendingRemarks.length}</span>
+            </div>
+            <button className="btn btn-secondary btn-small" onClick={() => void loadDepartmentPendingRemarks()}>
+              Обновить
+            </button>
+          </div>
+          {loadingDepartmentPending ? (
+            <div className="department-tasks-empty">Загрузка...</div>
+          ) : departmentPendingRemarks.length === 0 ? (
+            <div className="department-tasks-empty">Нет замечаний без исполнителя</div>
+          ) : (
+            <div className="department-task-list">
+              {departmentPendingRemarks.map((remark) => (
+                <article key={remark.id} className="department-task-card">
+                  <div>
+                    <strong>
+                      {remark.object_name
+                        ? `${remark.object_name}${remark.subobject_name ? `/${remark.subobject_name}` : ""}`
+                        : "Объект не указан"}
+                    </strong>
+                    <span>
+                      {remark.document_type || "Вид документа не указан"}
+                      {remark.letter_number ? ` · письмо № ${remark.letter_number}` : ""}
+                    </span>
+                    {remark.remark_text ? <p>{remark.remark_text}</p> : null}
+                  </div>
+                  <div className="department-task-actions">
+                    <button className="btn btn-secondary btn-small" onClick={() => openDepartmentTask(remark)}>
+                      Открыть
+                    </button>
+                    <button className="btn btn-primary btn-small" onClick={() => startAssignExecutor(remark)}>
+                      Назначить
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {showMyTasks ? (
+        <section className="my-tasks-panel">
+          <div className="my-tasks-header">
+            <div>
+              <strong>Мои задачи</strong>
+              <span>{myTasks.length}</span>
+            </div>
+            <button className="btn btn-secondary btn-small" onClick={() => void loadMyTasks()}>
+              Обновить
+            </button>
+          </div>
+          {loadingMyTasks ? (
+            <div className="department-tasks-empty">Загрузка...</div>
+          ) : myTasks.length === 0 ? (
+            <div className="department-tasks-empty">Назначенных задач нет</div>
+          ) : (
+            <div className="my-task-list">
+              {myTasks.map((remark) => (
+                <article key={remark.id} className={`my-task-card due-${getDueState(remark.due_date)}`}>
+                  <div>
+                    <div className="my-task-title-row">
+                      <strong>
+                        {remark.object_name
+                          ? `${remark.object_name}${remark.subobject_name ? `/${remark.subobject_name}` : ""}`
+                          : "Объект не указан"}
+                      </strong>
+                      <span className={`due-badge due-${getDueState(remark.due_date)}`}>
+                        {getDueLabel(remark.due_date)}
+                      </span>
+                    </div>
+                    <span className="my-task-meta">
+                      {remark.document_type || "Вид документа не указан"}
+                      {remark.letter_number ? ` · письмо № ${remark.letter_number}` : ""}
+                      {remark.status ? ` · ${STATUS_LABELS[remark.status] ?? remark.status}` : ""}
+                    </span>
+                    {remark.remark_text ? <p>{remark.remark_text}</p> : null}
+                  </div>
+                  <div className="my-task-actions">
+                    <button className="btn btn-secondary btn-small" onClick={() => openDepartmentTask(remark)}>
+                      Открыть
+                    </button>
+                    {remark.status !== "in_progress" ? (
+                      <button className="btn btn-secondary btn-small" onClick={() => void setMyTaskInProgress(remark)}>
+                        В работу
+                      </button>
+                    ) : null}
+                    {remark.status !== "pending_review" && remark.status !== "resolved" ? (
+                      <button
+                        className="btn btn-primary btn-small"
+                        onClick={() => {
+                          setSelectedRemark(remark);
+                          setResultNotes(remark.resolution_notes ?? "");
+                          setModalMode("submit-result");
+                        }}
+                      >
+                        На рассмотрение
+                      </button>
+                    ) : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
       ) : null}
 
@@ -749,16 +993,7 @@ export default function App() {
                           {showAssignExecutor && remark.department_id ? (
                             <button
                               className="btn btn-primary"
-                              onClick={() => {
-                                setSelectedRemark(remark);
-                                setAssigneeId(remark.assignee_id ? String(remark.assignee_id) : "");
-                                setExecutorDueDate(remark.due_date ? remark.due_date.slice(0, 10) : "");
-                                setModalMode("assign-executor");
-                                void api
-                                  .getUsers(remark.department_id ?? undefined)
-                                  .then(setDepartmentUsers)
-                                  .catch(() => undefined);
-                              }}
+                              onClick={() => startAssignExecutor(remark)}
                             >
                               Назначить исполнителя
                             </button>
@@ -977,6 +1212,33 @@ export default function App() {
                 </option>
               ))}
             </select>
+          </div>
+        </Modal>
+      ) : null}
+
+      {modalMode === "submit-result" && selectedRemark ? (
+        <Modal
+          title="Результат выполнения"
+          onClose={() => setModalMode(null)}
+          footer={
+            <>
+              <button className="btn btn-secondary" onClick={() => setModalMode(null)}>
+                Отмена
+              </button>
+              <button className="btn btn-primary" onClick={() => void submitTaskResult()}>
+                Отправить на рассмотрение
+              </button>
+            </>
+          }
+        >
+          <div className="field">
+            <label htmlFor="resultNotes">Что выполнено</label>
+            <textarea
+              id="resultNotes"
+              value={resultNotes}
+              onChange={(event) => setResultNotes(event.target.value)}
+              placeholder="Опишите результат выполнения или приложите пояснение для проверки"
+            />
           </div>
         </Modal>
       ) : null}

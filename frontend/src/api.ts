@@ -237,6 +237,8 @@ export const api = {
     return request<PaginatedResponse<Remark>>(`${API}/remarks${query ? `?${query}` : ""}`);
   },
 
+  getRemark: (id: number) => request<Remark>(`${API}/remarks/${id}`),
+
   getRemarkMeta: () => request<RemarkMeta>(`${API}/remarks/meta`),
 
   createRemark: (letterId: number, data: RemarkFormData) =>

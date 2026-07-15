@@ -141,6 +141,16 @@ export const emptyLetterForm = (): LetterFormData => ({
 
 export interface Remark {
   id: number;
+  letter_id: number | null;
+  letter: {
+    id: number;
+    object_id: number;
+    from_whom: string | null;
+    letter_number: string | null;
+    letter_date: string | null;
+    lep_accompaniment: string | null;
+    lep_accompaniment_date: string | null;
+  } | null;
   from_whom: string | null;
   letter_number: string | null;
   letter_date: string | null;
