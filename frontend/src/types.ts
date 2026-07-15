@@ -93,7 +93,8 @@ export const emptyObjectForm = (): ObjectFormData => ({
   subobject_name: "",
 });
 
-export function formatObjectTitle(object: Pick<ProjectObject, "name" | "subobject_name">): string {
+export function formatObjectTitle(object: Pick<ProjectObject, "name" | "subobject_name"> | null | undefined): string {
+  if (!object) return "";
   return object.subobject_name ? `${object.name}/${object.subobject_name}` : object.name;
 }
 

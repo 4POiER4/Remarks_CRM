@@ -48,7 +48,7 @@ button {
 
 .hierarchy-layout {
   display: grid;
-  grid-template-columns: 280px 320px minmax(0, 1fr);
+  grid-template-columns: 360px minmax(0, 1fr);
   gap: 16px;
   min-height: calc(100vh - 180px);
 }
@@ -126,6 +126,57 @@ button {
   border-color: #111827;
   border-width: 2px;
   background: #eff6ff;
+}
+
+.object-letters-panel {
+  margin: 8px 0 4px 14px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+}
+
+.object-letters-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.nested-letter-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.nested-letter-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 3px;
+}
+
+.nested-letter-item:hover {
+  background: var(--surface-muted);
+}
+
+.nested-letter-item.active {
+  border-color: var(--primary);
+  background: #dbeafe;
+}
+
+.nested-empty {
+  padding: 8px 10px;
+  color: var(--text-muted);
+  font-size: 0.88rem;
 }
 
 .panel-empty,

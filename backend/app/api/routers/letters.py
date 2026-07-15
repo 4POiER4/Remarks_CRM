@@ -167,7 +167,7 @@ def create_letter_remark(
 async def upload_attachment(
   letter_id: int,
   file: UploadFile = File(...),
-  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value, UserRole.GIP.value))] = ...,
+  user: Annotated[User, Depends(get_current_user)] = ...,
   db: Session = Depends(get_db),
 ):
   letter = fetch_letter(db, letter_id)

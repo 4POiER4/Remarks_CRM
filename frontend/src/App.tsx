@@ -742,6 +742,47 @@ export default function App() {
                         {obj.letters_count} писем · {obj.remarks_count} замеч.
                       </span>
                     </button>
+                    {selectedObjectId === obj.id ? (
+                      <div className="object-letters-panel">
+                        <div className="object-letters-header">
+                          <span>Письма</span>
+                          {showManageActions ? (
+                            <button
+                              className="btn btn-primary btn-small"
+                              onClick={() => setModalMode("create-letter")}
+                            >
+                              + Письмо
+                            </button>
+                          ) : null}
+                        </div>
+                        {loadingLetters ? (
+                          <div className="nested-empty">Загрузка...</div>
+                        ) : letters.length === 0 ? (
+                          <div className="nested-empty">Писем пока нет</div>
+                        ) : (
+                          <ul className="nested-letter-list">
+                            {letters.map((letter) => (
+                              <li key={letter.id}>
+                                <button
+                                  type="button"
+                                  className={`nested-letter-item ${selectedLetterId === letter.id ? "active" : ""}`}
+                                  onClick={() => selectLetter(letter.id)}
+                                >
+                                  <span className="nav-item-title">
+                                    {letter.letter_number ? `№ ${letter.letter_number}` : "Без номера"}
+                                    {letter.from_whom ? ` · ${letter.from_whom}` : ""}
+                                  </span>
+                                  <span className="nav-item-meta">
+                                    {formatDate(letter.letter_date)} · {letter.remarks_count} замеч.
+                                    {letter.attachments_count ? ` · ${letter.attachments_count} файл.` : ""}
+                                  </span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -749,6 +790,7 @@ export default function App() {
           </div>
         </aside>
 
+        {false ? (
         <section className="hierarchy-panel letters-panel">
           <div className="panel-header letters-header">
             <span>{selectedObject ? formatObjectTitle(selectedObject) : "Письма"}</span>
@@ -790,6 +832,8 @@ export default function App() {
           </div>
         </section>
 
+        ) : null}
+
         <main className="hierarchy-main">
           {!selectedLetterId ? (
             <div className="panel-empty main-empty">
@@ -828,7 +872,6 @@ export default function App() {
                   <div className="attachments-section">
                     <div className="attachments-header">
                       <strong>Файлы</strong>
-                      {showManageActions ? (
                         <div className="attachments-upload">
                           <input
                             type="file"
@@ -842,7 +885,6 @@ export default function App() {
                             {uploading ? "Загрузка..." : "Прикрепить"}
                           </button>
                         </div>
-                      ) : null}
                     </div>
                     {letterDetail.attachments.length === 0 ? (
                       <p className="import-note">Файлы не прикреплены</p>
