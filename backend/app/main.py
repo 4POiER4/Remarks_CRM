@@ -6,7 +6,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routers import auth, departments, health, import_stats, letters, notifications, objects, remarks, users
 from app.core.config import get_settings
 from app.core.database import Base, engine, get_db
-from app.seed import migrate_hierarchy, migrate_schema, migrate_statuses, seed_admin_user, seed_default_departments
+from app.seed import (
+  migrate_hierarchy,
+  migrate_schema,
+  migrate_statuses,
+  seed_admin_user,
+  seed_default_departments,
+  seed_test_users,
+)
 
 
 @asynccontextmanager
@@ -17,6 +24,7 @@ async def lifespan(_app: FastAPI):
   try:
     seed_default_departments(db)
     seed_admin_user(db)
+    seed_test_users(db)
     migrate_statuses(db)
     migrate_hierarchy(db)
   finally:

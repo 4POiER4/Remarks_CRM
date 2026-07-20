@@ -298,6 +298,47 @@ def seed_admin_user(db: Session) -> None:
   db.commit()
 
 
+def seed_test_users(db: Session) -> None:
+  settings = get_settings()
+  if not settings.seed_test_users or settings.ldap_enabled:
+    return
+
+  password_hash = hash_password(settings.test_user_password)
+  department_by_code = {department.code: department for department in db.query(Department).all()}
+  test_users = [
+    ("ogip", "ОГИП тест", UserRole.GIP.value, "ОГИП"),
+    ("pto_head", "Начальник ПТО", UserRole.DEPARTMENT_HEAD.value, "ПТО"),
+    ("pto_emp1", "Инженер ПТО 1", UserRole.EMPLOYEE.value, "ПТО"),
+    ("pto_emp2", "Инженер ПТО 2", UserRole.EMPLOYEE.value, "ПТО"),
+    ("ot_head", "Начальник ОТ", UserRole.DEPARTMENT_HEAD.value, "ОТ"),
+    ("ot_emp1", "Инженер ОТ 1", UserRole.EMPLOYEE.value, "ОТ"),
+    ("oe_head", "Начальник ОЭ", UserRole.DEPARTMENT_HEAD.value, "ОЭ"),
+    ("oe_emp1", "Инженер ОЭ 1", UserRole.EMPLOYEE.value, "ОЭ"),
+  ]
+
+  for username, display_name, role, department_code in test_users:
+    department = department_by_code.get(department_code)
+    user = db.query(User).filter(User.username == username).first()
+    if user:
+      user.display_name = display_name
+      user.role = role
+      user.department_id = department.id if department else None
+      user.password_hash = password_hash
+      user.is_active = True
+    else:
+      db.add(
+        User(
+          username=username,
+          display_name=display_name,
+          password_hash=password_hash,
+          role=role,
+          department_id=department.id if department else None,
+          is_active=True,
+        )
+      )
+  db.commit()
+
+
 def migrate_statuses(db: Session) -> None:
   for old_status, new_status in STATUS_MIGRATION.items():
     db.query(Remark).filter(Remark.status == old_status).update({Remark.status: new_status})

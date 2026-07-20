@@ -110,9 +110,26 @@ nginx/             — конфиг reverse proxy (в frontend/)
 - Фильтры и полнотекстовый поиск
 - Роли: admin, gip, department_head, employee
 
-# Back
-cd "D:\!!!!1.БелНИПИ\Прога по змечаниям\backend"
-.\venv\Scripts\python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
-
-# Front
-npm run dev 
+Проверил:
+docker compose --env-file .env.docker.example up -d --build проходит.
+Все контейнеры поднялись.
+http://localhost:8080/api/health возвращает ok.
+Логин ogip / test123 работает.
+Для тестировщика основные команды:
+copy .env.docker.example .env
+docker compose up -d --build
+Открывать:
+http://localhost:8080
+Логины:
+admin / admin
+ogip / test123
+pto_head / test123
+pto_emp1 / test123
+pto_emp2 / test123
+ot_head / test123
+ot_emp1 / test123
+oe_head / test123
+oe_emp1 / test123
+Для полного сброса базы и файлов:
+docker compose down -v
+Сейчас Docker-стек у тебя уже запущен на localhost:8080.

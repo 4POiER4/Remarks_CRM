@@ -51,6 +51,8 @@ class Settings:
 
     self.dev_admin_username = os.getenv("DEV_ADMIN_USERNAME", "admin")
     self.dev_admin_password = os.getenv("DEV_ADMIN_PASSWORD", "admin")
+    self.seed_test_users = os.getenv("SEED_TEST_USERS", "false").lower() in {"1", "true", "yes"}
+    self.test_user_password = os.getenv("TEST_USER_PASSWORD", "test123")
 
     self.default_page_size = int(os.getenv("DEFAULT_PAGE_SIZE", "50"))
     self.max_page_size = int(os.getenv("MAX_PAGE_SIZE", "200"))
