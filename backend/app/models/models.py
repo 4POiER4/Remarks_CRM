@@ -10,6 +10,7 @@ from app.core.database import Base
 class RemarkStatus(str, Enum):
   IN_PROGRESS = "in_progress"
   PENDING_REVIEW = "pending_review"
+  NEEDS_REVISION = "needs_revision"
   RESOLVED = "resolved"
 
 
@@ -159,8 +160,16 @@ class Remark(Base):
   assigned_at: Mapped[datetime | None] = mapped_column(DateTime)
   assignee_assigned_by: Mapped[str | None] = mapped_column(String(255))
   assignee_assigned_at: Mapped[datetime | None] = mapped_column(DateTime)
+  department_due_date: Mapped[date | None] = mapped_column(Date, index=True)
   due_date: Mapped[date | None] = mapped_column(Date, index=True)
   resolution_notes: Mapped[str | None] = mapped_column(Text)
+  result_filename: Mapped[str | None] = mapped_column(String(255))
+  result_stored_name: Mapped[str | None] = mapped_column(String(255))
+  result_content_hash: Mapped[str | None] = mapped_column(String(64))
+  result_content_type: Mapped[str | None] = mapped_column(String(100))
+  result_file_size: Mapped[int | None] = mapped_column(Integer)
+  result_uploaded_by: Mapped[str | None] = mapped_column(String(255))
+  result_uploaded_at: Mapped[datetime | None] = mapped_column(DateTime)
 
   created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
   updated_at: Mapped[datetime] = mapped_column(
@@ -173,3 +182,55 @@ class Remark(Base):
     back_populates="assigned_remarks",
     foreign_keys=[assignee_id],
   )
+  results: Mapped[list["RemarkResult"]] = relationship(
+    back_populates="remark",
+    cascade="all, delete-orphan",
+    order_by="RemarkResult.created_at",
+  )
+  feedback: Mapped[list["RemarkFeedback"]] = relationship(
+    back_populates="remark",
+    cascade="all, delete-orphan",
+    order_by="RemarkFeedback.created_at",
+  )
+
+
+class RemarkResult(Base):
+  __tablename__ = "remark_results"
+  __table_args__ = (
+    Index("ix_remark_results_remark_created", "remark_id", "created_at"),
+  )
+
+  id: Mapped[int] = mapped_column(primary_key=True)
+  remark_id: Mapped[int] = mapped_column(ForeignKey("remarks.id"), nullable=False, index=True)
+  notes: Mapped[str | None] = mapped_column(Text)
+  filename: Mapped[str | None] = mapped_column(String(255))
+  stored_name: Mapped[str | None] = mapped_column(String(255))
+  content_hash: Mapped[str | None] = mapped_column(String(64))
+  content_type: Mapped[str | None] = mapped_column(String(100))
+  file_size: Mapped[int | None] = mapped_column(Integer)
+  created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+  created_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+  created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+  updated_at: Mapped[datetime] = mapped_column(
+    DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+  )
+
+  remark: Mapped[Remark] = relationship(back_populates="results")
+  created_by: Mapped[User | None] = relationship()
+
+
+class RemarkFeedback(Base):
+  __tablename__ = "remark_feedback"
+  __table_args__ = (
+    Index("ix_remark_feedback_remark_created", "remark_id", "created_at"),
+  )
+
+  id: Mapped[int] = mapped_column(primary_key=True)
+  remark_id: Mapped[int] = mapped_column(ForeignKey("remarks.id"), nullable=False, index=True)
+  comment: Mapped[str] = mapped_column(Text, nullable=False)
+  created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+  created_by_name: Mapped[str] = mapped_column(String(255), nullable=False)
+  created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+  remark: Mapped[Remark] = relationship(back_populates="feedback")
+  created_by: Mapped[User] = relationship()

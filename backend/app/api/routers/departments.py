@@ -37,7 +37,7 @@ def list_departments(
 @router.post("", response_model=DepartmentRead)
 def create_department(
   payload: DepartmentCreate,
-  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value, UserRole.GIP.value))],
+  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value))],
   db: Session = Depends(get_db),
 ):
   existing = (
@@ -59,7 +59,7 @@ def create_department(
 def update_department(
   department_id: int,
   payload: DepartmentUpdate,
-  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value, UserRole.GIP.value))],
+  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value))],
   db: Session = Depends(get_db),
 ):
   department = db.query(Department).filter(Department.id == department_id).first()
@@ -95,7 +95,7 @@ def update_department(
 @router.delete("/{department_id}")
 def delete_department(
   department_id: int,
-  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value, UserRole.GIP.value))],
+  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value))],
   db: Session = Depends(get_db),
 ):
   department = db.query(Department).filter(Department.id == department_id).first()

@@ -108,7 +108,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [userDepartmentId, setUserDepartmentId] = useState("");
 
   const loadDepartments = async () => {
-    const data = await api.getDepartments(kindFilter || undefined);
+    const data = await api.getDepartments();
     setDepartments(data);
   };
 
@@ -138,7 +138,13 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   useEffect(() => {
     void loadData();
-  }, [tab, kindFilter]);
+  }, [tab]);
+
+  useEffect(() => {
+    if (!success) return;
+    const timeoutId = window.setTimeout(() => setSuccess(null), 15_000);
+    return () => window.clearTimeout(timeoutId);
+  }, [success]);
 
   const openCreate = () => {
     setFormData(emptyDepartmentForm());
@@ -213,6 +219,9 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   const departmentsCount = departments.filter((item) => item.kind === "department").length;
   const subcontractorsCount = departments.filter((item) => item.kind === "subcontractor").length;
+  const visibleDepartments = kindFilter
+    ? departments.filter((item) => item.kind === kindFilter)
+    : departments;
   const activeDepartmentsTabLabel = kindFilter ? DEPARTMENT_KIND_LABELS[kindFilter] : "Отделы";
 
   return (
@@ -238,7 +247,10 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         {canManageDepartments(user.role) ? (
           <button
             className={`admin-tab ${tab === "departments" ? "active" : ""}`}
-            onClick={() => setTab("departments")}
+            onClick={() => {
+              setTab("departments");
+              setKindFilter("department");
+            }}
           >
             {activeDepartmentsTabLabel}
           </button>
@@ -292,7 +304,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             <div className="panel-body">
               {loading ? (
                 <div className="empty-state">Загрузка...</div>
-              ) : departments.length === 0 ? (
+              ) : visibleDepartments.length === 0 ? (
                 <div className="empty-state">Записей пока нет. Добавьте отдел или субподряд.</div>
               ) : (
                 <div className="admin-table-wrap">
@@ -307,7 +319,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
                       </tr>
                     </thead>
                     <tbody>
-                      {departments.map((department) => (
+                      {visibleDepartments.map((department) => (
                         <tr key={department.id}>
                           <td>
                             <span className={`kind-badge kind-badge-${department.kind}`}>
@@ -318,18 +330,20 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
                           <td>{department.name}</td>
                           <td>{department.remarks_count ?? 0}</td>
                           <td className="admin-actions">
-                            <button
-                              className="btn btn-secondary btn-small"
-                              onClick={() => openEdit(department)}
-                            >
-                              Изменить
-                            </button>
-                            <button
-                              className="btn btn-danger btn-small"
-                              onClick={() => void removeDepartment(department)}
-                            >
-                              Удалить
-                            </button>
+                            <div className="admin-actions-inner">
+                              <button
+                                className="btn btn-secondary btn-small"
+                                onClick={() => openEdit(department)}
+                              >
+                                Изменить
+                              </button>
+                              <button
+                                className="btn btn-danger btn-small"
+                                onClick={() => void removeDepartment(department)}
+                              >
+                                Удалить
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -376,12 +390,14 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
                           {item.department ? formatResponsibleParty(item.department) : "—"}
                         </td>
                         <td className="admin-actions">
-                          <button
-                            className="btn btn-secondary btn-small"
-                            onClick={() => openEditUser(item)}
-                          >
-                            Настроить
-                          </button>
+                          <div className="admin-actions-inner">
+                            <button
+                              className="btn btn-secondary btn-small"
+                              onClick={() => openEditUser(item)}
+                            >
+                              Настроить
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

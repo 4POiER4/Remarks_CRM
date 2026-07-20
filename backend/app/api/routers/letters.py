@@ -22,6 +22,8 @@ from app.services.remarks import (
   attachment_to_read,
   build_visible_remarks_query,
   delete_attachment_file,
+  delete_remark_result_file,
+  delete_result_attachment_file,
   fetch_letter,
   fetch_object,
   fetch_remark,
@@ -57,7 +59,7 @@ def list_letters(
 def create_letter(
   object_id: int,
   payload: LetterCreate,
-  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value, UserRole.GIP.value))],
+  user: Annotated[User, Depends(require_roles(UserRole.GIP.value))],
   db: Session = Depends(get_db),
 ):
   fetch_object(db, object_id)
@@ -88,7 +90,7 @@ def get_letter(
 def update_letter(
   letter_id: int,
   payload: LetterUpdate,
-  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value, UserRole.GIP.value))],
+  user: Annotated[User, Depends(require_roles(UserRole.GIP.value))],
   db: Session = Depends(get_db),
 ):
   letter = fetch_letter(db, letter_id)
@@ -104,12 +106,16 @@ def update_letter(
 @router.delete("/api/letters/{letter_id}")
 def delete_letter(
   letter_id: int,
-  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value, UserRole.GIP.value))],
+  user: Annotated[User, Depends(require_roles(UserRole.GIP.value))],
   db: Session = Depends(get_db),
 ):
   letter = fetch_letter(db, letter_id)
   for attachment in letter.attachments:
     delete_attachment_file(attachment)
+  for remark in letter.remarks:
+    for result in remark.results:
+      delete_remark_result_file(result)
+    delete_result_attachment_file(remark)
   db.delete(letter)
   db.commit()
   invalidate_remarks_cache()
@@ -152,7 +158,7 @@ def list_letter_remarks(
 def create_letter_remark(
   letter_id: int,
   payload: RemarkCreate,
-  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value, UserRole.GIP.value))],
+  user: Annotated[User, Depends(require_roles(UserRole.GIP.value))],
   db: Session = Depends(get_db),
 ):
   fetch_letter(db, letter_id)

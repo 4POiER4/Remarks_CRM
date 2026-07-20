@@ -1,135 +1,142 @@
 # Учёт замечаний
 
-Веб-приложение для ведения карточек замечаний к объектам и распределения задач по отделам (для ГИП).
+Веб-приложение для регистрации замечаний по объектам и письмам, назначения ответственных отделов, контроля сроков и проверки результатов выполнения.
 
-## Архитектура (v2)
+## Возможности
 
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────────────────────┐
-│   Nginx     │────▶│   Frontend   │     │  React SPA (статика)        │
-│  :80        │     │  (Vite build)│     └─────────────────────────────┘
-└──────┬──────┘     └──────────────┘
-       │ /api/*
-       ▼
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Gunicorn   │────▶│  PostgreSQL  │     │    Redis     │
-│  4 workers  │     │  (основная БД)│     │  (кэш, jobs) │
-│  FastAPI    │     └──────────────┘     └──────────────┘
-└─────────────┘
-```
+- иерархия «объект / подобъект → письмо → замечания»;
+- импорт объектов, писем и замечаний из Excel;
+- назначение отделу финального срока от ОГИП;
+- назначение исполнителя и внутреннего срока начальником отдела;
+- несколько редактируемых результатов выполнения с документами;
+- история комментариев ОГИП;
+- уведомления о назначении, возврате на доработку и успешном устранении;
+- вложения `.doc`, `.docx`, `.xls`, `.xlsx`, `.xlsm`, `.pdf`, `.jpg`, `.jpeg`, `.png`, `.txt` размером до 1 ГБ;
+- фильтры, поиск и статистика;
+- LDAP/Active Directory или локальная авторизация.
 
-**Рассчитано на ~500 одновременных пользователей:**
-- PostgreSQL вместо SQLite (параллельные записи, connection pool)
-- Redis-кэш для статистики, справочников и метаданных
-- Пагинация списка замечаний (50 на страницу)
-- Фоновый импорт Excel (не блокирует API)
-- 4+ Gunicorn workers за Nginx
-- Индексы на ключевых полях БД
+## Роли
 
-## Быстрый запуск (разработка, Windows)
+| Роль | Возможности |
+|---|---|
+| `admin` | Пользователи, отделы и административная панель |
+| `gip` | Создание и редактирование объектов, писем и замечаний; назначение отдела и финального срока; проверка результата |
+| `department_head` | Просмотр задач своего отдела; назначение исполнителя и внутреннего срока; добавление результатов |
+| `employee` | Просмотр назначенных задач; добавление и редактирование своих результатов |
 
-1. Установите [Python 3.12+](https://www.python.org/downloads/) и [Node.js](https://nodejs.org/)
-2. Дважды кликните **`start.bat`**
-3. Откройте: **http://127.0.0.1:5173**
+Удалять вложения писем могут только ОГИП и администратор. Добавлять вложения могут все авторизованные пользователи.
 
-Для разработки используется SQLite (файл `backend/zamechaniya.db`). Redis опционален — без него кэш отключается.
+## Рабочий процесс
 
-## Production (Docker)
+1. ОГИП создаёт объект, письмо и замечание.
+2. ОГИП назначает ответственный отдел и финальный срок. Статус становится **«В работе»**, начальник отдела получает уведомление.
+3. Начальник отдела выполняет задачу сам либо назначает сотрудника своего отдела и устанавливает внутренний срок не позднее финального.
+4. Начальник или исполнитель добавляет один или несколько результатов. Статус автоматически становится **«На рассмотрении»**, ОГИП получает уведомление.
+5. ОГИП принимает результат со статусом **«Устранено»** либо выбирает **«Доработать»** и обязательно пишет комментарий.
+6. При возврате начальник отдела и исполнитель получают уведомление и видят комментарий ОГИП. Новый результат снова переводит замечание в статус **«На рассмотрении»**.
+7. При успешном устранении начальник отдела и исполнитель получают уведомление.
 
-```bash
-# Скопируйте и настройте переменные
-cp backend/.env.example .env
+Статусы замечания: **«В работе»**, **«На рассмотрении»**, **«Доработать»**, **«Устранено»**.
 
-# Запуск
+## Запуск в Docker
+
+Требуется Docker Desktop с поддержкой Docker Compose.
+
+```powershell
+Copy-Item .env.docker.example .env
 docker compose up -d --build
-
-# Приложение: http://localhost
 ```
 
-Переменные в `.env`:
-- `JWT_SECRET` — обязательно смените
-- `POSTGRES_PASSWORD` — пароль БД
-- `LDAP_*` — настройки Active Directory
-- `WEB_CONCURRENCY` — число workers (рекомендуется 4–8)
+Приложение: <http://localhost:8080>
 
-## Ручной запуск
+Проверка состояния:
 
-### Backend
+```powershell
+docker compose ps
+Invoke-RestMethod http://localhost:8080/api/health
+```
 
-```bash
+Остановка:
+
+```powershell
+docker compose down
+```
+
+Полный сброс базы данных, кэша и загруженных файлов:
+
+```powershell
+docker compose down -v
+```
+
+Перед передачей проекта измените в `.env` значения `JWT_SECRET` и `POSTGRES_PASSWORD`. Подробная инструкция для тестировщика находится в [DOCKER_TESTING.md](DOCKER_TESTING.md).
+
+## Тестовые пользователи
+
+Пользователи создаются при первом запуске, если в `.env` установлено `SEED_TEST_USERS=true`. Пароль тестовых пользователей: `test123`.
+
+| Логин | Роль | Отдел |
+|---|---|---|
+| `ogip` | ОГИП | ОГИП |
+| `pto_head` | Начальник отдела | ПТО |
+| `pto_emp1`, `pto_emp2` | Исполнитель | ПТО |
+| `ot_head` | Начальник отдела | ОТ |
+| `ot_emp1` | Исполнитель | ОТ |
+| `oe_head` | Начальник отдела | ОЭ |
+| `oe_emp1` | Исполнитель | ОЭ |
+
+Локальный администратор по умолчанию: `admin / admin`. Эти данные предназначены только для разработки и тестирования и должны быть изменены перед эксплуатацией.
+
+## Запуск для разработки
+
+Требуются Python 3.12+ и Node.js.
+
+Быстрый запуск в Windows:
+
+```powershell
+.\start.bat
+```
+
+Frontend будет доступен по адресу <http://127.0.0.1:5173>, backend — <http://127.0.0.1:8000>. В режиме разработки используется SQLite `backend/zamechaniya.db`; Redis необязателен.
+
+Ручной запуск backend:
+
+```powershell
 cd backend
 python -m venv venv
-venv\Scripts\activate        # Linux: source venv/bin/activate
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-cp .env.example .env
-uvicorn main:app --reload --host 127.0.0.1 --port 8000
+Copy-Item .env.example .env
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-### Frontend
+Ручной запуск frontend в отдельном терминале:
 
-```bash
+```powershell
 cd frontend
 npm install
 npm run dev
 ```
 
+## Архитектура
+
+- **Frontend:** React, TypeScript, Vite, Nginx в Docker;
+- **Backend:** FastAPI, SQLAlchemy, Gunicorn/Uvicorn;
+- **База данных:** PostgreSQL в Docker, SQLite при локальной разработке;
+- **Кэш:** Redis;
+- **Авторизация:** JWT, опционально LDAP/Active Directory.
+
+```text
+frontend/src/             React-интерфейс
+backend/app/api/routers/  маршруты API
+backend/app/models/       модели SQLAlchemy
+backend/app/schemas/      схемы Pydantic
+backend/app/services/     бизнес-логика
+docker-compose.yml        Docker-стек
+```
+
 ## API
 
-- Документация: http://127.0.0.1:8000/docs
-- Health check: http://127.0.0.1:8000/api/health
-- Список замечаний: `GET /api/remarks?page=1&page_size=50`
-- Фоновый импорт: `POST /api/import/excel/async` → `GET /api/import/jobs/{id}`
-
-## Структура проекта
-
-```
-backend/
-  app/
-    api/routers/   — маршруты API (auth, remarks, departments, ...)
-    core/          — config, database, cache
-    models/        — SQLAlchemy модели
-    schemas/       — Pydantic схемы
-    services/      — бизнес-логика, статистика, импорт
-  main.py          — точка входа
-  Dockerfile
-  gunicorn.conf.py
-frontend/
-  src/             — React + TypeScript
-  Dockerfile
-docker-compose.yml
-nginx/             — конфиг reverse proxy (в frontend/)
-```
-
-## Возможности
-
-- Карточки замечаний с полями из Excel
-- Назначение отделу и исполнителю
-- Статусы: В работе → На рассмотрении → Устранено
-- LDAP/AD авторизация
-- Импорт из Excel (.xlsx)
-- Фильтры и полнотекстовый поиск
-- Роли: admin, gip, department_head, employee
-
-Проверил:
-docker compose --env-file .env.docker.example up -d --build проходит.
-Все контейнеры поднялись.
-http://localhost:8080/api/health возвращает ok.
-Логин ogip / test123 работает.
-Для тестировщика основные команды:
-copy .env.docker.example .env
-docker compose up -d --build
-Открывать:
-http://localhost:8080
-Логины:
-admin / admin
-ogip / test123
-pto_head / test123
-pto_emp1 / test123
-pto_emp2 / test123
-ot_head / test123
-ot_emp1 / test123
-oe_head / test123
-oe_emp1 / test123
-Для полного сброса базы и файлов:
-docker compose down -v
-Сейчас Docker-стек у тебя уже запущен на localhost:8080.
+- Swagger: <http://127.0.0.1:8000/docs> при локальной разработке;
+- health check: `GET /api/health`;
+- замечания: `GET /api/remarks?page=1&page_size=50`;
+- фоновый импорт: `POST /api/import/excel/async` и `GET /api/import/jobs/{id}`.

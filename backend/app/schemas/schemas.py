@@ -190,12 +190,12 @@ class RemarkUpdate(RemarkCreate):
 
 class RemarkAssignDepartment(BaseModel):
   department_id: int
-  status: str = "in_progress"
+  department_due_date: date
 
 
 class RemarkAssignExecutor(BaseModel):
   assignee_id: int
-  due_date: date | None = None
+  due_date: date
 
 
 class RemarkStatusUpdate(BaseModel):
@@ -210,6 +210,30 @@ class DepartmentBrief(BaseModel):
   name: str
   code: str
   kind: str
+
+
+class RemarkResultRead(BaseModel):
+  id: int
+  remark_id: int
+  notes: str | None = None
+  filename: str | None = None
+  content_type: str | None = None
+  file_size: int | None = None
+  created_by_id: int | None = None
+  created_by_name: str
+  created_at: datetime
+  updated_at: datetime
+
+
+class RemarkFeedbackRead(BaseModel):
+  model_config = ConfigDict(from_attributes=True)
+
+  id: int
+  remark_id: int
+  comment: str
+  created_by_id: int
+  created_by_name: str
+  created_at: datetime
 
 
 class RemarkRead(BaseModel):
@@ -227,8 +251,11 @@ class RemarkRead(BaseModel):
   assigned_at: datetime | None = None
   assignee_assigned_by: str | None = None
   assignee_assigned_at: datetime | None = None
+  department_due_date: date | None = None
   due_date: date | None = None
   resolution_notes: str | None = None
+  results: list[RemarkResultRead] = Field(default_factory=list)
+  feedback: list[RemarkFeedbackRead] = Field(default_factory=list)
   created_at: datetime
   updated_at: datetime
   department: DepartmentBrief | None = None

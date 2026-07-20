@@ -150,6 +150,7 @@ def migrate_schema() -> None:
         "assignee_id": "INTEGER REFERENCES users(id)",
         "assignee_assigned_by": "VARCHAR(255)",
         "assignee_assigned_at": "DATETIME",
+        "department_due_date": "DATE",
         "due_date": "DATE",
         "letter_id": "INTEGER REFERENCES letters(id)",
       }
@@ -162,10 +163,65 @@ def migrate_schema() -> None:
         connection.exec_driver_sql("ALTER TABLE objects ADD COLUMN subobject_name VARCHAR(255)")
       if "due_date" not in remark_columns:
         connection.exec_driver_sql("ALTER TABLE remarks ADD COLUMN due_date DATE")
+      if "department_due_date" not in remark_columns:
+        connection.exec_driver_sql("ALTER TABLE remarks ADD COLUMN department_due_date DATE")
       if "letter_id" not in remark_columns:
         connection.exec_driver_sql(
           "ALTER TABLE remarks ADD COLUMN letter_id INTEGER REFERENCES letters(id)"
         )
+
+    result_file_migrations = {
+      "result_filename": "VARCHAR(255)",
+      "result_stored_name": "VARCHAR(255)",
+      "result_content_hash": "VARCHAR(64)",
+      "result_content_type": "VARCHAR(100)",
+      "result_file_size": "INTEGER",
+      "result_uploaded_by": "VARCHAR(255)",
+      "result_uploaded_at": "TIMESTAMP",
+    }
+    for column, column_type in result_file_migrations.items():
+      if column not in remark_columns:
+        connection.exec_driver_sql(f"ALTER TABLE remarks ADD COLUMN {column} {column_type}")
+
+    if _table_columns("remark_results"):
+      connection.exec_driver_sql(
+        """
+        INSERT INTO remark_results (
+          remark_id, notes, filename, stored_name, content_hash, content_type,
+          file_size, created_by_id, created_by_name, created_at, updated_at
+        )
+        SELECT
+          remarks.id,
+          remarks.resolution_notes,
+          remarks.result_filename,
+          remarks.result_stored_name,
+          remarks.result_content_hash,
+          remarks.result_content_type,
+          remarks.result_file_size,
+          NULL,
+          COALESCE(remarks.result_uploaded_by, 'Неизвестно'),
+          COALESCE(remarks.result_uploaded_at, remarks.updated_at, remarks.created_at),
+          COALESCE(remarks.result_uploaded_at, remarks.updated_at, remarks.created_at)
+        FROM remarks
+        WHERE (remarks.resolution_notes IS NOT NULL OR remarks.result_stored_name IS NOT NULL)
+          AND NOT EXISTS (
+            SELECT 1 FROM remark_results WHERE remark_results.remark_id = remarks.id
+          )
+        """
+      )
+      connection.exec_driver_sql(
+        """
+        UPDATE remark_results
+        SET created_by_id = (
+          SELECT users.id
+          FROM users
+          WHERE users.display_name = remark_results.created_by_name
+          ORDER BY users.id
+          LIMIT 1
+        )
+        WHERE created_by_id IS NULL
+        """
+      )
 
 
 def _get_or_create_object(db: Session, name: str) -> ProjectObject:

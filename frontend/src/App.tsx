@@ -11,6 +11,7 @@ import {
   Notification,
   ProjectObject,
   Remark,
+  RemarkResult,
   RemarkFormData,
   ROLE_LABELS,
   Stats,
@@ -20,7 +21,6 @@ import {
   User,
   canAssignDepartment,
   canAssignExecutor,
-  canManageDepartments,
   canManageRemarks,
   emptyLetterForm,
   emptyObjectForm,
@@ -40,10 +40,12 @@ type ModalMode =
   | "assign-department"
   | "assign-executor"
   | "submit-result"
+  | "review-feedback"
   | "import"
   | null;
 
 const MAX_UPLOAD_SIZE_BYTES = 1024 * 1024 * 1024;
+const APP_VIEW_STORAGE_KEY = "zamechaniya.app-view";
 const ALLOWED_UPLOAD_EXTENSIONS = [".doc", ".docx", ".xls", ".xlsx", ".xlsm", ".pdf", ".jpg", ".jpeg", ".png", ".txt"];
 const ACCEPTED_UPLOAD_TYPES = ALLOWED_UPLOAD_EXTENSIONS.join(",");
 const UPLOAD_RULE_TEXT = `Можно прикреплять файлы ${ALLOWED_UPLOAD_EXTENSIONS.join(", ")} размером до 1 ГБ`;
@@ -74,7 +76,9 @@ function Modal({
 
 export default function App() {
   const { user, loading: authLoading, logout } = useAuth();
-  const [view, setView] = useState<AppPage>("remarks");
+  const [view, setView] = useState<AppPage>(() =>
+    window.sessionStorage.getItem(APP_VIEW_STORAGE_KEY) === "admin" ? "admin" : "remarks",
+  );
   const [objects, setObjects] = useState<ProjectObject[]>([]);
   const [letters, setLetters] = useState<Letter[]>([]);
   const [selectedObjectId, setSelectedObjectId] = useState<number | null>(null);
@@ -99,10 +103,17 @@ export default function App() {
   const [letterForm, setLetterForm] = useState<LetterFormData>(emptyLetterForm());
   const [remarkForm, setRemarkForm] = useState<RemarkFormData>(emptyRemarkForm());
   const [selectedRemark, setSelectedRemark] = useState<Remark | null>(null);
+  const [focusedRemarkId, setFocusedRemarkId] = useState<number | null>(null);
   const [assignDepartmentId, setAssignDepartmentId] = useState("");
+  const [departmentDueDate, setDepartmentDueDate] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
   const [executorDueDate, setExecutorDueDate] = useState("");
   const [resultNotes, setResultNotes] = useState("");
+  const [resultFile, setResultFile] = useState<File | null>(null);
+  const [editingResult, setEditingResult] = useState<RemarkResult | null>(null);
+  const [removeResultFile, setRemoveResultFile] = useState(false);
+  const [submittingResult, setSubmittingResult] = useState(false);
+  const [reviewComment, setReviewComment] = useState("");
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -117,15 +128,25 @@ export default function App() {
   const showManageActions = user ? canManageRemarks(user.role) : false;
   const showAssignDepartment = user ? canAssignDepartment(user.role) : false;
   const showAssignExecutor = user ? canAssignExecutor(user.role) : false;
-  const showAdmin = user ? canManageDepartments(user.role) : false;
+  const showAdmin = user?.role === "admin";
   const showDepartmentHeadTasks = user?.role === "department_head";
   const showMyTasks = user?.role === "employee";
-  const canReviewRemark = (remark: Remark) =>
+  const canReviewRemark = (_remark: Remark) =>
+    user?.role === "gip";
+
+  const canEditResult = (remark: Remark, result: RemarkResult) =>
     !!user &&
-    (canManageRemarks(user.role) ||
+    remark.status !== "resolved" &&
+    ((user.role === "employee" && result.created_by_id === user.id) ||
       (user.role === "department_head" && user.department_id === remark.department_id));
 
-  const validateUploadFile = (file: File): string | null => {
+  const canSubmitResult = (remark: Remark) =>
+    !!user &&
+    remark.status !== "resolved" &&
+    ((user.role === "employee" && remark.assignee_id === user.id) ||
+      (user.role === "department_head" && user.department_id === remark.department_id));
+
+  const validateFileRules = (file: File): string | null => {
     const extension = file.name.includes(".") ? `.${file.name.split(".").pop()?.toLowerCase()}` : "";
     if (!ALLOWED_UPLOAD_EXTENSIONS.includes(extension)) {
       return UPLOAD_RULE_TEXT;
@@ -133,6 +154,12 @@ export default function App() {
     if (file.size > MAX_UPLOAD_SIZE_BYTES) {
       return "Можно прикреплять файлы размером до 1 ГБ";
     }
+    return null;
+  };
+
+  const validateUploadFile = (file: File): string | null => {
+    const rulesError = validateFileRules(file);
+    if (rulesError) return rulesError;
     if (letterDetail?.attachments.some((item) => item.filename === file.name && item.file_size === file.size)) {
       return "Вы прикрепляете файл, который уже прикреплен!";
     }
@@ -252,6 +279,22 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
+    window.sessionStorage.setItem(APP_VIEW_STORAGE_KEY, view);
+  }, [view]);
+
+  useEffect(() => {
+    if (user && view === "admin" && user.role !== "admin") {
+      setView("remarks");
+    }
+  }, [user, view]);
+
+  useEffect(() => {
+    if (!success) return;
+    const timeoutId = window.setTimeout(() => setSuccess(null), 15_000);
+    return () => window.clearTimeout(timeoutId);
+  }, [success]);
+
+  useEffect(() => {
     if (!user) return;
     const timer = window.setInterval(() => {
       void refreshCurrent();
@@ -283,6 +326,21 @@ export default function App() {
       setRemarks([]);
     }
   }, [selectedLetterId]);
+
+  useEffect(() => {
+    if (!focusedRemarkId || !remarks.some((remark) => remark.id === focusedRemarkId)) return;
+    const frameId = window.requestAnimationFrame(() => {
+      document.getElementById(`remark-${focusedRemarkId}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+    const timeoutId = window.setTimeout(() => setFocusedRemarkId(null), 2500);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timeoutId);
+    };
+  }, [focusedRemarkId, remarks]);
 
   const selectObject = (objectId: number) => {
     setSelectedObjectId(objectId);
@@ -350,9 +408,18 @@ export default function App() {
       setError("Выберите отдел");
       return;
     }
+    if (!departmentDueDate) {
+      setError("Укажите финальный срок исполнения");
+      return;
+    }
     try {
-      await api.assignDepartment(selectedRemark.id, Number(assignDepartmentId));
+      await api.assignDepartment(
+        selectedRemark.id,
+        Number(assignDepartmentId),
+        departmentDueDate,
+      );
       setModalMode(null);
+      setDepartmentDueDate("");
       setSuccess("Отдел назначен");
       await loadNotifications();
       await loadDepartmentPendingRemarks();
@@ -387,9 +454,11 @@ export default function App() {
     }
   };
 
-  const changeStatus = async (remark: Remark, status: string) => {
+  const changeStatus = async (remark: Remark, status: string, comment?: string) => {
     try {
-      await api.updateStatus(remark.id, status, remark.resolution_notes ?? undefined);
+      await api.updateStatus(remark.id, status, comment);
+      setModalMode(null);
+      setReviewComment("");
       setSuccess(`Статус: ${STATUS_LABELS[status]}`);
       if (selectedLetterId) await loadLetterDetail(selectedLetterId);
       await loadDepartmentPendingRemarks();
@@ -403,16 +472,54 @@ export default function App() {
 
   const submitTaskResult = async () => {
     if (!selectedRemark) return;
+    const keepsExistingFile = !!editingResult?.filename && !removeResultFile;
+    if (!resultNotes.trim() && !resultFile && !keepsExistingFile) {
+      setError("Опишите результат или прикрепите документ");
+      return;
+    }
+    if (resultFile) {
+      const validationError = validateFileRules(resultFile);
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
+    }
+    setSubmittingResult(true);
     try {
-      await api.updateStatus(selectedRemark.id, "pending_review", resultNotes.trim() || undefined);
+      if (editingResult) {
+        await api.updateRemarkResult(
+          selectedRemark.id,
+          editingResult.id,
+          resultNotes,
+          resultFile,
+          removeResultFile,
+        );
+      } else {
+        await api.submitRemarkResult(selectedRemark.id, resultNotes, resultFile);
+      }
       setModalMode(null);
       setResultNotes("");
-      setSuccess("Задача отправлена на рассмотрение");
+      setResultFile(null);
+      setEditingResult(null);
+      setRemoveResultFile(false);
+      setSuccess(editingResult ? "Результат обновлён" : "Результат отправлен на рассмотрение");
       await loadMyTasks();
+      await loadDepartmentPendingRemarks();
+      await loadNotifications();
       if (selectedLetterId) await loadLetterDetail(selectedLetterId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось отправить результат");
+    } finally {
+      setSubmittingResult(false);
     }
+  };
+
+  const submitRevisionFeedback = async () => {
+    if (!selectedRemark || !reviewComment.trim()) {
+      setError("Укажите, что необходимо доработать");
+      return;
+    }
+    await changeStatus(selectedRemark, "needs_revision", reviewComment.trim());
   };
 
   const getDueState = (dueDate: string | null): "none" | "ok" | "soon" | "overdue" => {
@@ -427,25 +534,6 @@ export default function App() {
     return "ok";
   };
 
-  const getDueLabel = (dueDate: string | null): string => {
-    const state = getDueState(dueDate);
-    if (state === "none") return "Срок не указан";
-    if (state === "overdue") return `Просрочено: ${formatDate(dueDate)}`;
-    if (state === "soon") return `Скоро: ${formatDate(dueDate)}`;
-    return `Срок: ${formatDate(dueDate)}`;
-  };
-
-  const setMyTaskInProgress = async (remark: Remark) => {
-    try {
-      await api.updateStatus(remark.id, "in_progress", remark.resolution_notes ?? undefined);
-      setSuccess("Задача в работе");
-      await loadMyTasks();
-      if (selectedLetterId) await loadLetterDetail(selectedLetterId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось обновить задачу");
-    }
-  };
-
   const markAllNotificationsRead = async () => {
     try {
       await api.markAllNotificationsRead();
@@ -456,6 +544,7 @@ export default function App() {
   };
 
   const openDepartmentTask = (remark: Remark) => {
+    setFocusedRemarkId(remark.id);
     if (remark.letter?.object_id) {
       setSelectedObjectId(remark.letter.object_id);
     }
@@ -486,6 +575,28 @@ export default function App() {
       .getUsers(remark.department_id ?? undefined)
       .then(setDepartmentUsers)
       .catch(() => undefined);
+  };
+
+  const openResultModal = (remark: Remark, result: RemarkResult | null = null) => {
+    setSelectedRemark(remark);
+    setEditingResult(result);
+    setResultNotes(result?.notes ?? "");
+    setResultFile(null);
+    setRemoveResultFile(false);
+    setModalMode("submit-result");
+  };
+
+  const removeResult = async (remark: Remark, result: RemarkResult) => {
+    if (!window.confirm("Удалить результат выполнения?")) return;
+    try {
+      await api.deleteRemarkResult(remark.id, result.id);
+      setSuccess("Результат удалён");
+      await loadMyTasks();
+      await loadDepartmentPendingRemarks();
+      if (selectedLetterId) await loadLetterDetail(selectedLetterId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось удалить результат");
+    }
   };
 
   const removeRemark = async (remark: Remark) => {
@@ -563,7 +674,7 @@ export default function App() {
     return <Login />;
   }
 
-  if (view === "admin") {
+  if (view === "admin" && showAdmin) {
     return <AdminPanel onBack={() => setView("remarks")} />;
   }
 
@@ -592,7 +703,13 @@ export default function App() {
               Админ-панель
             </button>
           ) : null}
-          <button className="btn btn-secondary" onClick={logout}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => {
+              setView("remarks");
+              logout();
+            }}
+          >
             Выйти
           </button>
         </div>
@@ -654,7 +771,7 @@ export default function App() {
         <section className="department-tasks-panel">
           <div className="department-tasks-header">
             <div>
-              <strong>Требуют назначения исполнителя</strong>
+              <strong>Задачи отдела без исполнителя</strong>
               <span>{departmentPendingRemarks.length}</span>
             </div>
             <button className="btn btn-secondary btn-small" onClick={() => void loadDepartmentPendingRemarks()}>
@@ -670,24 +787,47 @@ export default function App() {
               {departmentPendingRemarks.map((remark) => (
                 <article key={remark.id} className="department-task-card">
                   <div>
-                    <strong>
-                      {remark.object_name
-                        ? `${remark.object_name}${remark.subobject_name ? `/${remark.subobject_name}` : ""}`
-                        : "Объект не указан"}
-                    </strong>
+                    <div className="my-task-title-row">
+                      <strong>
+                        {remark.object_name
+                          ? `${remark.object_name}${remark.subobject_name ? `/${remark.subobject_name}` : ""}`
+                          : "Объект не указан"}
+                      </strong>
+                      <span className={`due-badge due-${getDueState(remark.department_due_date)}`}>
+                        Финальный: {formatDate(remark.department_due_date)}
+                      </span>
+                    </div>
                     <span>
                       {remark.document_type || "Вид документа не указан"}
                       {remark.letter_number ? ` · письмо № ${remark.letter_number}` : ""}
                     </span>
                     {remark.remark_text ? <p>{remark.remark_text}</p> : null}
+                    {remark.feedback.length ? (
+                      <div className="task-feedback-compact">
+                        <strong>Комментарий ОГИП:</strong>{" "}
+                        {remark.feedback[remark.feedback.length - 1].comment}
+                      </div>
+                    ) : null}
+                    {remark.results.length ? (
+                      <div className="task-result-compact">
+                        Результатов: {remark.results.length}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="department-task-actions">
                     <button className="btn btn-secondary btn-small" onClick={() => openDepartmentTask(remark)}>
                       Открыть
                     </button>
-                    <button className="btn btn-primary btn-small" onClick={() => startAssignExecutor(remark)}>
-                      Назначить
-                    </button>
+                    {["in_progress", "needs_revision"].includes(remark.status) ? (
+                      <button className="btn btn-primary btn-small" onClick={() => startAssignExecutor(remark)}>
+                        Назначить исполнителя
+                      </button>
+                    ) : null}
+                    {remark.status !== "resolved" ? (
+                      <button className="btn btn-primary btn-small" onClick={() => openResultModal(remark)}>
+                        Добавить результат
+                      </button>
+                    ) : null}
                   </div>
                 </article>
               ))}
@@ -722,9 +862,14 @@ export default function App() {
                           ? `${remark.object_name}${remark.subobject_name ? `/${remark.subobject_name}` : ""}`
                           : "Объект не указан"}
                       </strong>
-                      <span className={`due-badge due-${getDueState(remark.due_date)}`}>
-                        {getDueLabel(remark.due_date)}
-                      </span>
+                      <div className="due-badge-group">
+                        <span className={`due-badge due-${getDueState(remark.due_date)}`}>
+                          Внутренний: {formatDate(remark.due_date)}
+                        </span>
+                        <span className={`due-badge due-${getDueState(remark.department_due_date)}`}>
+                          Финальный: {formatDate(remark.department_due_date)}
+                        </span>
+                      </div>
                     </div>
                     <span className="my-task-meta">
                       {remark.document_type || "Вид документа не указан"}
@@ -732,26 +877,28 @@ export default function App() {
                       {remark.status ? ` · ${STATUS_LABELS[remark.status] ?? remark.status}` : ""}
                     </span>
                     {remark.remark_text ? <p>{remark.remark_text}</p> : null}
+                    {remark.feedback.length ? (
+                      <div className="task-feedback-compact">
+                        <strong>Комментарий ОГИП:</strong>{" "}
+                        {remark.feedback[remark.feedback.length - 1].comment}
+                      </div>
+                    ) : null}
+                    {remark.results.length ? (
+                      <div className="task-result-compact">
+                        Результатов: {remark.results.length}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="my-task-actions">
                     <button className="btn btn-secondary btn-small" onClick={() => openDepartmentTask(remark)}>
                       Открыть
                     </button>
-                    {remark.status !== "in_progress" ? (
-                      <button className="btn btn-secondary btn-small" onClick={() => void setMyTaskInProgress(remark)}>
-                        В работу
-                      </button>
-                    ) : null}
-                    {remark.status !== "pending_review" && remark.status !== "resolved" ? (
+                    {remark.status !== "resolved" ? (
                       <button
                         className="btn btn-primary btn-small"
-                        onClick={() => {
-                          setSelectedRemark(remark);
-                          setResultNotes(remark.resolution_notes ?? "");
-                          setModalMode("submit-result");
-                        }}
+                        onClick={() => openResultModal(remark)}
                       >
-                        На рассмотрение
+                        Добавить результат
                       </button>
                     ) : null}
                   </div>
@@ -921,23 +1068,35 @@ export default function App() {
                     <div className="attachments-header">
                       <strong>Файлы</strong>
                         <div className="attachments-upload">
-                          <input
-                            type="file"
-                            accept={ACCEPTED_UPLOAD_TYPES}
-                            onChange={(event) => {
-                              const file = event.target.files?.[0] ?? null;
-                              if (file) {
-                                const validationError = validateUploadFile(file);
-                                if (validationError) {
-                                  setError(validationError);
-                                  event.target.value = "";
-                                  setUploadFile(null);
-                                  return;
-                                }
+                          <label className="file-picker">
+                            <input
+                              key={
+                                uploadFile
+                                  ? `${uploadFile.name}-${uploadFile.size}-${uploadFile.lastModified}`
+                                  : "empty-upload"
                               }
-                              setUploadFile(file);
-                            }}
-                          />
+                              className="file-picker-input"
+                              type="file"
+                              accept={ACCEPTED_UPLOAD_TYPES}
+                              onChange={(event) => {
+                                const file = event.target.files?.[0] ?? null;
+                                if (file) {
+                                  const validationError = validateUploadFile(file);
+                                  if (validationError) {
+                                    setError(validationError);
+                                    event.target.value = "";
+                                    setUploadFile(null);
+                                    return;
+                                  }
+                                }
+                                setUploadFile(file);
+                              }}
+                            />
+                            <span className="file-picker-button">Выбрать файл</span>
+                            <span className="file-picker-name">
+                              {uploadFile?.name || "Файл не выбран"}
+                            </span>
+                          </label>
                           <button
                             className="btn btn-secondary btn-small"
                             disabled={!uploadFile || uploading}
@@ -1003,7 +1162,11 @@ export default function App() {
                 ) : (
                   <div className="remark-list">
                     {remarks.map((remark) => (
-                      <article key={remark.id} className="remark-card">
+                      <article
+                        id={`remark-${remark.id}`}
+                        key={remark.id}
+                        className={`remark-card ${focusedRemarkId === remark.id ? "remark-card-focused" : ""}`}
+                      >
                         <div className="remark-card-header">
                           <div>
                             <div className="remark-card-title">
@@ -1033,7 +1196,14 @@ export default function App() {
                                 disabled={!canReviewRemark(remark)}
                                 onClick={() => {
                                   if (!canReviewRemark(remark)) return;
-                                  if (remark.status !== value) void changeStatus(remark, value);
+                                  if (remark.status === value) return;
+                                  if (value === "needs_revision") {
+                                    setSelectedRemark(remark);
+                                    setReviewComment("");
+                                    setModalMode("review-feedback");
+                                    return;
+                                  }
+                                  void changeStatus(remark, value);
                                 }}
                               >
                                 {label}
@@ -1050,6 +1220,76 @@ export default function App() {
                           </div>
                         ) : null}
 
+                        {remark.feedback.length ? (
+                          <div className="feedback-summary">
+                            <strong>Комментарии ОГИП</strong>
+                            <div className="feedback-list">
+                              {remark.feedback.map((item) => (
+                                <div key={item.id} className="feedback-item">
+                                  <div className="feedback-item-header">
+                                    {item.created_by_name} · {formatDate(item.created_at)}
+                                  </div>
+                                  <p>{item.comment}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {remark.results.length ? (
+                          <div className="result-summary">
+                            <strong>Результаты выполнения: {remark.results.length}</strong>
+                            <div className="result-list">
+                              {remark.results.map((result, index) => (
+                                <div key={result.id} className="result-item">
+                                  <div className="result-item-header">
+                                    <span>
+                                      Результат {index + 1} · {result.created_by_name} · {formatDate(result.created_at)}
+                                    </span>
+                                    {canEditResult(remark, result) ? (
+                                      <div className="result-item-actions">
+                                        <button
+                                          className="btn btn-secondary btn-small"
+                                          onClick={() => openResultModal(remark, result)}
+                                        >
+                                          Изменить
+                                        </button>
+                                        <button
+                                          className="btn btn-danger btn-small"
+                                          onClick={() => void removeResult(remark, result)}
+                                        >
+                                          Удалить
+                                        </button>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                  {result.notes ? <p>{result.notes}</p> : null}
+                                  {result.filename ? (
+                                    <div className="result-attachment">
+                                      <button
+                                        type="button"
+                                        className="attachment-link"
+                                        onClick={() =>
+                                          void api.downloadRemarkResult(
+                                            remark.id,
+                                            result.id,
+                                            result.filename!,
+                                          )
+                                        }
+                                      >
+                                        {result.filename}
+                                      </button>
+                                      <span className="attachment-meta">
+                                        {formatFileSize(result.file_size ?? 0)}
+                                      </span>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
                         <div className="meta-grid">
                           <div className="meta-item">
                             <span>Отдел</span>
@@ -1060,12 +1300,21 @@ export default function App() {
                             {remark.assignee?.display_name || "Не назначен"}
                           </div>
                           <div className="meta-item">
-                            <span>Срок исполнения</span>
+                            <span>Финальный срок ОГИП</span>
+                            {formatDate(remark.department_due_date)}
+                          </div>
+                          <div className="meta-item">
+                            <span>Внутренний срок исполнителя</span>
                             {formatDate(remark.due_date)}
                           </div>
                         </div>
 
                         <div className="card-actions">
+                          {canSubmitResult(remark) ? (
+                            <button className="btn btn-primary" onClick={() => openResultModal(remark)}>
+                              Добавить результат
+                            </button>
+                          ) : null}
                           {showManageActions ? (
                             <button
                               className="btn btn-secondary"
@@ -1090,13 +1339,18 @@ export default function App() {
                                 setAssignDepartmentId(
                                   remark.department_id ? String(remark.department_id) : "",
                                 );
+                                setDepartmentDueDate(
+                                  remark.department_due_date
+                                    ? remark.department_due_date.slice(0, 10)
+                                    : "",
+                                );
                                 setModalMode("assign-department");
                               }}
                             >
                               Назначить отдел
                             </button>
                           ) : null}
-                          {showAssignExecutor && remark.department_id ? (
+                          {showAssignExecutor && remark.department_id && ["in_progress", "needs_revision"].includes(remark.status) ? (
                             <button
                               className="btn btn-primary"
                               onClick={() => startAssignExecutor(remark)}
@@ -1281,6 +1535,15 @@ export default function App() {
               <DepartmentOptions departments={departments} />
             </select>
           </div>
+          <div className="field">
+            <label htmlFor="departmentDueDate">Финальный срок исполнения</label>
+            <input
+              id="departmentDueDate"
+              type="date"
+              value={departmentDueDate}
+              onChange={(event) => setDepartmentDueDate(event.target.value)}
+            />
+          </div>
         </Modal>
       ) : null}
 
@@ -1316,6 +1579,7 @@ export default function App() {
               id="executorDueDate"
               type="date"
               value={executorDueDate}
+              max={selectedRemark.department_due_date?.slice(0, 10)}
               onChange={(event) => setExecutorDueDate(event.target.value)}
             />
           </div>
@@ -1324,15 +1588,37 @@ export default function App() {
 
       {modalMode === "submit-result" && selectedRemark ? (
         <Modal
-          title="Результат выполнения"
-          onClose={() => setModalMode(null)}
+          title={editingResult ? "Редактировать результат" : "Новый результат выполнения"}
+          onClose={() => {
+            setModalMode(null);
+            setResultFile(null);
+            setEditingResult(null);
+            setRemoveResultFile(false);
+          }}
           footer={
             <>
-              <button className="btn btn-secondary" onClick={() => setModalMode(null)}>
+              <button
+                className="btn btn-secondary"
+                disabled={submittingResult}
+                onClick={() => {
+                  setModalMode(null);
+                  setResultFile(null);
+                  setEditingResult(null);
+                  setRemoveResultFile(false);
+                }}
+              >
                 Отмена
               </button>
-              <button className="btn btn-primary" onClick={() => void submitTaskResult()}>
-                Отправить на рассмотрение
+              <button
+                className="btn btn-primary"
+                disabled={submittingResult}
+                onClick={() => void submitTaskResult()}
+              >
+                {submittingResult
+                  ? "Сохранение..."
+                  : editingResult
+                    ? "Сохранить изменения"
+                    : "Отправить на рассмотрение"}
               </button>
             </>
           }
@@ -1344,6 +1630,105 @@ export default function App() {
               value={resultNotes}
               onChange={(event) => setResultNotes(event.target.value)}
               placeholder="Опишите результат выполнения или приложите пояснение для проверки"
+            />
+          </div>
+          <div className="field">
+            <label>Документ результата</label>
+            <label className="file-picker file-picker-block">
+              <input
+                key={
+                  resultFile
+                    ? `${resultFile.name}-${resultFile.size}-${resultFile.lastModified}`
+                    : "empty-result"
+                }
+                className="file-picker-input"
+                type="file"
+                accept={ACCEPTED_UPLOAD_TYPES}
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  if (file) {
+                    const validationError = validateFileRules(file);
+                    if (validationError) {
+                      setError(validationError);
+                      event.target.value = "";
+                      setResultFile(null);
+                      return;
+                    }
+                  }
+                  setResultFile(file);
+                  if (file) setRemoveResultFile(false);
+                }}
+              />
+              <span className="file-picker-button">Выбрать файл</span>
+              <span className="file-picker-name">
+                {resultFile?.name || "Файл не выбран"}
+              </span>
+            </label>
+            <p className="result-file-note">
+              {UPLOAD_RULE_TEXT}.
+              {editingResult?.filename ? " Новый документ заменит текущий." : ""}
+            </p>
+            {editingResult?.filename ? (
+              <div className="current-result-row">
+                <button
+                  type="button"
+                  className="attachment-link current-result-file"
+                  onClick={() =>
+                    void api.downloadRemarkResult(
+                      selectedRemark.id,
+                      editingResult.id,
+                      editingResult.filename!,
+                    )
+                  }
+                >
+                  Текущий файл: {editingResult.filename}
+                </button>
+                <label className="result-remove-file">
+                  <input
+                    type="checkbox"
+                    checked={removeResultFile}
+                    onChange={(event) => setRemoveResultFile(event.target.checked)}
+                  />
+                  Удалить текущий файл
+                </label>
+              </div>
+            ) : null}
+          </div>
+        </Modal>
+      ) : null}
+
+      {modalMode === "review-feedback" && selectedRemark ? (
+        <Modal
+          title="Вернуть на доработку"
+          onClose={() => {
+            setModalMode(null);
+            setReviewComment("");
+          }}
+          footer={
+            <>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setModalMode(null);
+                  setReviewComment("");
+                }}
+              >
+                Отмена
+              </button>
+              <button className="btn btn-primary" onClick={() => void submitRevisionFeedback()}>
+                Отправить отделу
+              </button>
+            </>
+          }
+        >
+          <div className="field">
+            <label htmlFor="reviewComment">Что необходимо доработать</label>
+            <textarea
+              id="reviewComment"
+              autoFocus
+              value={reviewComment}
+              onChange={(event) => setReviewComment(event.target.value)}
+              placeholder="Опишите замечания к результату выполнения"
             />
           </div>
         </Modal>
@@ -1369,11 +1754,23 @@ export default function App() {
           </p>
           <div className="field">
             <label>Файл .xlsx</label>
-            <input
-              type="file"
-              accept=".xlsx,.xlsm"
-              onChange={(event) => setImportFile(event.target.files?.[0] ?? null)}
-            />
+            <label className="file-picker file-picker-block">
+              <input
+                key={
+                  importFile
+                    ? `${importFile.name}-${importFile.size}-${importFile.lastModified}`
+                    : "empty-import"
+                }
+                className="file-picker-input"
+                type="file"
+                accept=".xlsx,.xlsm"
+                onChange={(event) => setImportFile(event.target.files?.[0] ?? null)}
+              />
+              <span className="file-picker-button">Выбрать файл</span>
+              <span className="file-picker-name">
+                {importFile?.name || "Файл не выбран"}
+              </span>
+            </label>
           </div>
         </Modal>
       ) : null}

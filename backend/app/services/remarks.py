@@ -1,6 +1,7 @@
 import math
 import os
 import uuid
+from datetime import datetime
 from hashlib import sha256
 from pathlib import Path
 
@@ -11,7 +12,17 @@ from sqlalchemy.orm import Query, Session, joinedload
 from app.auth import can_manage_all
 from app.core.config import get_settings
 from app.filters import apply_remark_filters, apply_remark_visibility
-from app.models.models import Department, Letter, LetterAttachment, ProjectObject, Remark, User, UserRole
+from app.models.models import (
+  Department,
+  Letter,
+  LetterAttachment,
+  ProjectObject,
+  Remark,
+  RemarkFeedback,
+  RemarkResult,
+  User,
+  UserRole,
+)
 from app.schemas.schemas import (
   DepartmentRead,
   LetterAttachmentRead,
@@ -19,6 +30,8 @@ from app.schemas.schemas import (
   LetterRead,
   ObjectBrief,
   ObjectRead,
+  RemarkResultRead,
+  RemarkFeedbackRead,
   RemarkRead,
   UserRead,
 )
@@ -61,6 +74,14 @@ def attachment_to_read(attachment: LetterAttachment) -> LetterAttachmentRead:
   return LetterAttachmentRead.model_validate(attachment)
 
 
+def remark_result_to_read(result: RemarkResult) -> RemarkResultRead:
+  return RemarkResultRead.model_validate(result, from_attributes=True)
+
+
+def remark_feedback_to_read(feedback: RemarkFeedback) -> RemarkFeedbackRead:
+  return RemarkFeedbackRead.model_validate(feedback, from_attributes=True)
+
+
 def letter_brief(letter: Letter | None) -> LetterBrief | None:
   if not letter:
     return None
@@ -82,8 +103,11 @@ def remark_to_read(remark: Remark) -> RemarkRead:
     assigned_at=remark.assigned_at,
     assignee_assigned_by=remark.assignee_assigned_by,
     assignee_assigned_at=remark.assignee_assigned_at,
+    department_due_date=remark.department_due_date,
     due_date=remark.due_date,
     resolution_notes=remark.resolution_notes,
+    results=[remark_result_to_read(result) for result in remark.results],
+    feedback=[remark_feedback_to_read(item) for item in remark.feedback],
     created_at=remark.created_at,
     updated_at=remark.updated_at,
     department=remark.department,
@@ -142,6 +166,8 @@ def get_remark_query(db: Session) -> Query:
   return db.query(Remark).options(
     joinedload(Remark.department),
     joinedload(Remark.assignee),
+    joinedload(Remark.results),
+    joinedload(Remark.feedback),
     joinedload(Remark.letter).joinedload(Letter.object),
   )
 
@@ -318,3 +344,126 @@ def delete_attachment_file(attachment: LetterAttachment) -> None:
   path = get_attachment_path(attachment)
   if path.exists():
     path.unlink()
+
+
+def get_result_attachment_path(remark: Remark) -> Path | None:
+  if not remark.result_stored_name:
+    return None
+  settings = get_settings()
+  return Path(settings.upload_dir) / "results" / str(remark.id) / remark.result_stored_name
+
+
+def delete_result_attachment_file(remark: Remark) -> None:
+  path = get_result_attachment_path(remark)
+  if path and path.exists():
+    path.unlink()
+
+
+def clear_result_attachment(remark: Remark) -> None:
+  delete_result_attachment_file(remark)
+  remark.result_filename = None
+  remark.result_stored_name = None
+  remark.result_content_hash = None
+  remark.result_content_type = None
+  remark.result_file_size = None
+  remark.result_uploaded_by = None
+  remark.result_uploaded_at = None
+
+
+async def save_result_attachment(
+  remark: Remark,
+  file: UploadFile,
+  uploaded_by: str,
+) -> None:
+  settings = get_settings()
+  if not file.filename:
+    raise HTTPException(status_code=400, detail="Имя файла не указано")
+
+  filename = Path(file.filename).name
+  extension = Path(filename).suffix.lower()
+  if extension not in settings.allowed_upload_extensions:
+    allowed = ", ".join(sorted(settings.allowed_upload_extensions))
+    raise HTTPException(status_code=400, detail=f"Можно прикреплять только файлы: {allowed}")
+
+  content = await file.read()
+  if len(content) > settings.max_upload_size_bytes:
+    raise HTTPException(
+      status_code=400,
+      detail=f"Файл слишком большой (макс. {settings.max_upload_size_mb} МБ)",
+    )
+
+  content_hash = sha256(content).hexdigest()
+  current_path = get_result_attachment_path(remark)
+  if remark.result_content_hash == content_hash and current_path and current_path.exists():
+    remark.result_filename = filename
+    remark.result_content_type = file.content_type
+    remark.result_file_size = len(content)
+    remark.result_uploaded_by = uploaded_by
+    remark.result_uploaded_at = datetime.utcnow()
+    return
+
+  old_path = get_result_attachment_path(remark)
+  result_dir = ensure_upload_dir() / "results" / str(remark.id)
+  result_dir.mkdir(parents=True, exist_ok=True)
+  stored_name = f"{uuid.uuid4().hex}_{filename}"
+  stored_path = result_dir / stored_name
+  stored_path.write_bytes(content)
+
+  if old_path and old_path.exists() and old_path != stored_path:
+    old_path.unlink()
+
+  remark.result_filename = filename
+  remark.result_stored_name = stored_name
+  remark.result_content_hash = content_hash
+  remark.result_content_type = file.content_type
+  remark.result_file_size = len(content)
+  remark.result_uploaded_by = uploaded_by
+  remark.result_uploaded_at = datetime.utcnow()
+
+
+def get_remark_result_file_path(result: RemarkResult) -> Path | None:
+  if not result.stored_name:
+    return None
+  settings = get_settings()
+  return Path(settings.upload_dir) / "results" / str(result.remark_id) / result.stored_name
+
+
+def delete_remark_result_file(result: RemarkResult) -> None:
+  path = get_remark_result_file_path(result)
+  if path and path.exists():
+    path.unlink()
+
+
+async def save_remark_result_file(result: RemarkResult, file: UploadFile) -> None:
+  settings = get_settings()
+  if not file.filename:
+    raise HTTPException(status_code=400, detail="Имя файла не указано")
+
+  filename = Path(file.filename).name
+  extension = Path(filename).suffix.lower()
+  if extension not in settings.allowed_upload_extensions:
+    allowed = ", ".join(sorted(settings.allowed_upload_extensions))
+    raise HTTPException(status_code=400, detail=f"Можно прикреплять только файлы: {allowed}")
+
+  content = await file.read()
+  if len(content) > settings.max_upload_size_bytes:
+    raise HTTPException(
+      status_code=400,
+      detail=f"Файл слишком большой (макс. {settings.max_upload_size_mb} МБ)",
+    )
+
+  old_path = get_remark_result_file_path(result)
+  result_dir = ensure_upload_dir() / "results" / str(result.remark_id)
+  result_dir.mkdir(parents=True, exist_ok=True)
+  stored_name = f"{uuid.uuid4().hex}_{filename}"
+  stored_path = result_dir / stored_name
+  stored_path.write_bytes(content)
+
+  if old_path and old_path.exists() and old_path != stored_path:
+    old_path.unlink()
+
+  result.filename = filename
+  result.stored_name = stored_name
+  result.content_hash = sha256(content).hexdigest()
+  result.content_type = file.content_type
+  result.file_size = len(content)

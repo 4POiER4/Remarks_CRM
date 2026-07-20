@@ -189,12 +189,10 @@ def can_manage_all(user: User) -> bool:
 
 
 def can_assign_department(user: User) -> bool:
-  return user.role in {UserRole.ADMIN.value, UserRole.GIP.value}
+  return user.role == UserRole.GIP.value
 
 
 def can_assign_executor(user: User, remark_department_id: int | None) -> bool:
-  if user.role in {UserRole.ADMIN.value, UserRole.GIP.value}:
-    return True
   if user.role == UserRole.DEPARTMENT_HEAD.value:
     return remark_department_id is not None and user.department_id == remark_department_id
   return False

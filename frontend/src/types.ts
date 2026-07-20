@@ -54,15 +54,15 @@ export function formatResponsibleParty(department: Department): string {
 }
 
 export function canManageRemarks(role: UserRole): boolean {
-  return role === "admin" || role === "gip";
+  return role === "gip";
 }
 
 export function canAssignDepartment(role: UserRole): boolean {
-  return role === "admin" || role === "gip";
+  return role === "gip";
 }
 
 export function canAssignExecutor(role: UserRole): boolean {
-  return role === "admin" || role === "gip" || role === "department_head";
+  return role === "department_head";
 }
 
 export function canManageDepartments(role: UserRole): boolean {
@@ -106,6 +106,19 @@ export interface LetterAttachment {
   file_size: number;
   uploaded_by: string | null;
   created_at: string;
+}
+
+export interface RemarkResult {
+  id: number;
+  remark_id: number;
+  notes: string | null;
+  filename: string | null;
+  content_type: string | null;
+  file_size: number | null;
+  created_by_id: number | null;
+  created_by_name: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Letter {
@@ -169,8 +182,11 @@ export interface Remark {
   assigned_at: string | null;
   assignee_assigned_by: string | null;
   assignee_assigned_at: string | null;
+  department_due_date: string | null;
   due_date: string | null;
   resolution_notes: string | null;
+  results: RemarkResult[];
+  feedback: RemarkFeedback[];
   created_at: string;
   updated_at: string;
   department: Department | null;
@@ -215,6 +231,15 @@ export interface ImportJob {
   finished_at: string | null;
 }
 
+export interface RemarkFeedback {
+  id: number;
+  remark_id: number;
+  comment: string;
+  created_by_id: number;
+  created_by_name: string;
+  created_at: string;
+}
+
 export interface Notification {
   id: number;
   user_id: number;
@@ -243,18 +268,21 @@ export interface LoginResponse {
 export const STATUS_LABELS: Record<string, string> = {
   in_progress: "В работе",
   pending_review: "Отработано на рассмотрении",
+  needs_revision: "Доработать",
   resolved: "Устранено",
 };
 
 export const STATUS_LABELS_SHORT: Record<string, string> = {
   in_progress: "В работе",
   pending_review: "На рассмотр.",
+  needs_revision: "Доработать",
   resolved: "Устранено",
 };
 
 export const STATUS_COLORS: Record<string, string> = {
   in_progress: "#ea580c",
   pending_review: "#2563eb",
+  needs_revision: "#b45309",
   resolved: "#16a34a",
 };
 

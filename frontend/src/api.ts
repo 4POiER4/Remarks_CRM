@@ -264,10 +264,10 @@ export const api = {
       body: JSON.stringify(normalizePayload(data)),
     }),
 
-  assignDepartment: (id: number, department_id: number) =>
+  assignDepartment: (id: number, department_id: number, department_due_date: string) =>
     request<Remark>(`${API}/remarks/${id}/assign-department`, {
       method: "POST",
-      body: JSON.stringify({ department_id, status: "in_progress" }),
+      body: JSON.stringify({ department_id, department_due_date }),
     }),
 
   assignExecutor: (id: number, assignee_id: number, due_date?: string) =>
@@ -295,6 +295,82 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ status, resolution_notes }),
     }),
+
+  submitRemarkResult: async (
+    id: number,
+    resolutionNotes: string,
+    file?: File | null,
+  ): Promise<Remark> => {
+    const formData = new FormData();
+    if (resolutionNotes.trim()) {
+      formData.append("resolution_notes", resolutionNotes.trim());
+    }
+    if (file) {
+      formData.append("file", file);
+    }
+    const headers = new Headers();
+    if (authToken) {
+      headers.set("Authorization", `Bearer ${authToken}`);
+    }
+    const response = await fetch(`${API}/remarks/${id}/result`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+    if (!response.ok) {
+      throw new Error(await readError(response, "Не удалось отправить результат"));
+    }
+    return response.json();
+  },
+
+  updateRemarkResult: async (
+    remarkId: number,
+    resultId: number,
+    notes: string,
+    file?: File | null,
+    removeFile = false,
+  ): Promise<Remark> => {
+    const formData = new FormData();
+    formData.append("notes", notes.trim());
+    formData.append("remove_file", String(removeFile));
+    if (file) {
+      formData.append("file", file);
+    }
+    const headers = new Headers();
+    if (authToken) {
+      headers.set("Authorization", `Bearer ${authToken}`);
+    }
+    const response = await fetch(`${API}/remarks/${remarkId}/results/${resultId}`, {
+      method: "PUT",
+      headers,
+      body: formData,
+    });
+    if (!response.ok) {
+      throw new Error(await readError(response, "Не удалось обновить результат"));
+    }
+    return response.json();
+  },
+
+  deleteRemarkResult: (remarkId: number, resultId: number) =>
+    request<Remark>(`${API}/remarks/${remarkId}/results/${resultId}`, { method: "DELETE" }),
+
+  downloadRemarkResult: async (remarkId: number, resultId: number, filename: string) => {
+    const headers = new Headers();
+    if (authToken) {
+      headers.set("Authorization", `Bearer ${authToken}`);
+    }
+    const response = await fetch(`${API}/remarks/${remarkId}/results/${resultId}/download`, { headers });
+    if (!response.ok) {
+      throw new Error(await readError(response, "Не удалось скачать файл результата"));
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  },
 
   deleteRemark: (id: number) =>
     request<{ ok: boolean }>(`${API}/remarks/${id}`, { method: "DELETE" }),

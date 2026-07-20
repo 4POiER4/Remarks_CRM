@@ -44,7 +44,7 @@ def list_objects(
 @router.post("", response_model=ObjectRead)
 def create_object(
   payload: ObjectCreate,
-  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value, UserRole.GIP.value))],
+  user: Annotated[User, Depends(require_roles(UserRole.GIP.value))],
   db: Session = Depends(get_db),
 ):
   name = payload.name.strip()
@@ -82,7 +82,7 @@ def get_object(
 def update_object(
   object_id: int,
   payload: ObjectUpdate,
-  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value, UserRole.GIP.value))],
+  user: Annotated[User, Depends(require_roles(UserRole.GIP.value))],
   db: Session = Depends(get_db),
 ):
   obj = fetch_object(db, object_id)
@@ -114,7 +114,7 @@ def update_object(
 @router.delete("/{object_id}")
 def delete_object(
   object_id: int,
-  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value, UserRole.GIP.value))],
+  user: Annotated[User, Depends(require_roles(UserRole.GIP.value))],
   db: Session = Depends(get_db),
 ):
   obj = fetch_object(db, object_id)

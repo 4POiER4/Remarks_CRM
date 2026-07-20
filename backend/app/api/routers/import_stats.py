@@ -33,7 +33,7 @@ def get_stats(
 @router.post("/api/import/excel", response_model=ImportResult)
 async def import_excel_sync(
   file: UploadFile = File(...),
-  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value, UserRole.GIP.value))] = ...,
+  user: Annotated[User, Depends(require_roles(UserRole.GIP.value))] = ...,
 ):
   if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm")):
     raise HTTPException(status_code=400, detail="Поддерживаются только файлы .xlsx")
@@ -46,7 +46,7 @@ async def import_excel_sync(
 @router.post("/api/import/excel/async", response_model=ImportJobRead)
 async def import_excel_async(
   file: UploadFile = File(...),
-  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value, UserRole.GIP.value))] = ...,
+  user: Annotated[User, Depends(require_roles(UserRole.GIP.value))] = ...,
 ):
   if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm")):
     raise HTTPException(status_code=400, detail="Поддерживаются только файлы .xlsx")
@@ -59,7 +59,7 @@ async def import_excel_async(
 @router.get("/api/import/jobs/{job_id}", response_model=ImportJobRead)
 def get_job_status(
   job_id: str,
-  user: Annotated[User, Depends(require_roles(UserRole.ADMIN.value, UserRole.GIP.value))],
+  user: Annotated[User, Depends(require_roles(UserRole.GIP.value))],
 ):
   job = get_import_job(job_id)
   if not job:
