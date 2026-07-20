@@ -257,6 +257,14 @@ def assign_executor(
   remark.assignee_assigned_at = datetime.utcnow()
   remark.due_date = payload.due_date
   remark.status = RemarkStatus.IN_PROGRESS.value
+  db.add(
+    Notification(
+      user_id=assignee.id,
+      remark_id=remark.id,
+      type="executor_assigned",
+      message=f"Вам назначено замечание #{remark.id}",
+    )
+  )
   db.commit()
   invalidate_remarks_cache()
   return remark_to_read(fetch_remark(db, remark_id))
@@ -281,9 +289,38 @@ def update_remark_status(
   if payload.status not in valid_statuses:
     raise HTTPException(status_code=400, detail="Недопустимый статус")
 
+  if user.role == UserRole.EMPLOYEE.value and payload.status == RemarkStatus.RESOLVED.value:
+    raise HTTPException(status_code=403, detail="Статус устранено может поставить ГИП или начальник отдела")
+
   remark.status = payload.status
   if payload.resolution_notes is not None:
     remark.resolution_notes = payload.resolution_notes
+  if payload.status == RemarkStatus.PENDING_REVIEW.value:
+    reviewers = (
+      db.query(User)
+      .filter(
+        User.is_active.is_(True),
+        (
+          User.role.in_([UserRole.ADMIN.value, UserRole.GIP.value])
+          | (
+            (User.role == UserRole.DEPARTMENT_HEAD.value)
+            & (User.department_id == remark.department_id)
+          )
+        ),
+      )
+      .all()
+    )
+    for reviewer in reviewers:
+      if reviewer.id == user.id:
+        continue
+      db.add(
+        Notification(
+          user_id=reviewer.id,
+          remark_id=remark.id,
+          type="remark_pending_review",
+          message=f"Замечание #{remark.id} отправлено на рассмотрение",
+        )
+      )
   db.commit()
   invalidate_remarks_cache()
   return remark_to_read(fetch_remark(db, remark_id))

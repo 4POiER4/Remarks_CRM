@@ -43,6 +43,11 @@ type ModalMode =
   | "import"
   | null;
 
+const MAX_UPLOAD_SIZE_BYTES = 1024 * 1024 * 1024;
+const ALLOWED_UPLOAD_EXTENSIONS = [".doc", ".docx", ".xls", ".xlsx", ".xlsm", ".pdf", ".jpg", ".jpeg", ".png", ".txt"];
+const ACCEPTED_UPLOAD_TYPES = ALLOWED_UPLOAD_EXTENSIONS.join(",");
+const UPLOAD_RULE_TEXT = `Можно прикреплять файлы ${ALLOWED_UPLOAD_EXTENSIONS.join(", ")} размером до 1 ГБ`;
+
 function Modal({
   title,
   onClose,
@@ -115,6 +120,24 @@ export default function App() {
   const showAdmin = user ? canManageDepartments(user.role) : false;
   const showDepartmentHeadTasks = user?.role === "department_head";
   const showMyTasks = user?.role === "employee";
+  const canReviewRemark = (remark: Remark) =>
+    !!user &&
+    (canManageRemarks(user.role) ||
+      (user.role === "department_head" && user.department_id === remark.department_id));
+
+  const validateUploadFile = (file: File): string | null => {
+    const extension = file.name.includes(".") ? `.${file.name.split(".").pop()?.toLowerCase()}` : "";
+    if (!ALLOWED_UPLOAD_EXTENSIONS.includes(extension)) {
+      return UPLOAD_RULE_TEXT;
+    }
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      return "Можно прикреплять файлы размером до 1 ГБ";
+    }
+    if (letterDetail?.attachments.some((item) => item.filename === file.name && item.file_size === file.size)) {
+      return "Вы прикрепляете файл, который уже прикреплен!";
+    }
+    return null;
+  };
 
   const loadObjects = async (search = objectSearch) => {
     setLoadingObjects(true);
@@ -230,6 +253,16 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
+    const timer = window.setInterval(() => {
+      void refreshCurrent();
+      void api.getStats().then(setStats).catch(() => undefined);
+      void loadNotifications();
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [user, selectedObjectId, selectedLetterId, objectSearch]);
+
+  useEffect(() => {
+    if (!user) return;
     const timer = setTimeout(() => void loadObjects(objectSearch), 300);
     return () => clearTimeout(timer);
   }, [objectSearch, user]);
@@ -325,6 +358,7 @@ export default function App() {
       await loadDepartmentPendingRemarks();
       await loadMyTasks();
       if (selectedLetterId) await loadLetterDetail(selectedLetterId);
+      void api.getStats().then(setStats).catch(() => undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка назначения");
     }
@@ -335,6 +369,10 @@ export default function App() {
       setError("Выберите исполнителя");
       return;
     }
+    if (!executorDueDate) {
+      setError("Укажите срок исполнения");
+      return;
+    }
     try {
       await api.assignExecutor(selectedRemark.id, Number(assigneeId), executorDueDate);
       setModalMode(null);
@@ -342,6 +380,7 @@ export default function App() {
       setSuccess("Исполнитель назначен");
       await loadDepartmentPendingRemarks();
       await loadMyTasks();
+      await loadNotifications();
       if (selectedLetterId) await loadLetterDetail(selectedLetterId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка назначения");
@@ -353,6 +392,10 @@ export default function App() {
       await api.updateStatus(remark.id, status, remark.resolution_notes ?? undefined);
       setSuccess(`Статус: ${STATUS_LABELS[status]}`);
       if (selectedLetterId) await loadLetterDetail(selectedLetterId);
+      await loadDepartmentPendingRemarks();
+      await loadMyTasks();
+      await loadNotifications();
+      void api.getStats().then(setStats).catch(() => undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка смены статуса");
     }
@@ -458,6 +501,11 @@ export default function App() {
 
   const submitUpload = async () => {
     if (!selectedLetterId || !uploadFile) return;
+    const validationError = validateUploadFile(uploadFile);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     setUploading(true);
     try {
       await api.uploadLetterAttachment(selectedLetterId, uploadFile);
@@ -875,7 +923,20 @@ export default function App() {
                         <div className="attachments-upload">
                           <input
                             type="file"
-                            onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
+                            accept={ACCEPTED_UPLOAD_TYPES}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0] ?? null;
+                              if (file) {
+                                const validationError = validateUploadFile(file);
+                                if (validationError) {
+                                  setError(validationError);
+                                  event.target.value = "";
+                                  setUploadFile(null);
+                                  return;
+                                }
+                              }
+                              setUploadFile(file);
+                            }}
                           />
                           <button
                             className="btn btn-secondary btn-small"
@@ -886,6 +947,7 @@ export default function App() {
                           </button>
                         </div>
                     </div>
+                    <p className="attachment-rules">{UPLOAD_RULE_TEXT}</p>
                     {letterDetail.attachments.length === 0 ? (
                       <p className="import-note">Файлы не прикреплены</p>
                     ) : (
@@ -948,7 +1010,7 @@ export default function App() {
                               {remark.document_type || "Вид документа не указан"}
                             </div>
                             {remark.document_remark ? (
-                              <div style={{ color: "var(--text-muted)", marginTop: 4 }}>
+                              <div className="remark-document-text">
                                 {remark.document_remark}
                               </div>
                             ) : null}
@@ -968,7 +1030,9 @@ export default function App() {
                                       }
                                     : undefined
                                 }
+                                disabled={!canReviewRemark(remark)}
                                 onClick={() => {
+                                  if (!canReviewRemark(remark)) return;
                                   if (remark.status !== value) void changeStatus(remark, value);
                                 }}
                               >
@@ -1217,15 +1281,6 @@ export default function App() {
               <DepartmentOptions departments={departments} />
             </select>
           </div>
-          <div className="field">
-            <label htmlFor="executorDueDate">Срок исполнения</label>
-            <input
-              id="executorDueDate"
-              type="date"
-              value={executorDueDate}
-              onChange={(event) => setExecutorDueDate(event.target.value)}
-            />
-          </div>
         </Modal>
       ) : null}
 
@@ -1254,6 +1309,15 @@ export default function App() {
                 </option>
               ))}
             </select>
+          </div>
+          <div className="field">
+            <label htmlFor="executorDueDate">Срок исполнения</label>
+            <input
+              id="executorDueDate"
+              type="date"
+              value={executorDueDate}
+              onChange={(event) => setExecutorDueDate(event.target.value)}
+            />
           </div>
         </Modal>
       ) : null}

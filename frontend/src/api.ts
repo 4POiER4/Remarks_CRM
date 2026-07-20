@@ -67,6 +67,17 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function readError(response: Response, fallback: string): Promise<string> {
+  const text = await response.text();
+  if (!text) return fallback;
+  try {
+    const parsed = JSON.parse(text) as { detail?: string };
+    return parsed.detail ?? text;
+  } catch {
+    return text;
+  }
+}
+
 function normalizePayload(data: RemarkFormData) {
   const payload: Record<string, string | null> = {};
   for (const [key, value] of Object.entries(data)) {
@@ -198,7 +209,7 @@ export const api = {
       body: formData,
     });
     if (!response.ok) {
-      throw new Error(await response.text());
+      throw new Error(await readError(response, "Ошибка загрузки файла"));
     }
     return response.json();
   },
@@ -301,7 +312,7 @@ export const api = {
       body: formData,
     });
     if (!response.ok) {
-      throw new Error(await response.text());
+      throw new Error(await readError(response, "Ошибка импорта"));
     }
     return response.json();
   },
@@ -319,7 +330,7 @@ export const api = {
       body: formData,
     });
     if (!response.ok) {
-      throw new Error(await response.text());
+      throw new Error(await readError(response, "Ошибка импорта"));
     }
     return response.json();
   },

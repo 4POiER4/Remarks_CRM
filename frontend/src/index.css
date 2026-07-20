@@ -240,6 +240,12 @@ button {
   font-size: 0.85rem;
 }
 
+.attachment-rules {
+  margin: -4px 0 12px;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
 .remarks-section {
   min-width: 0;
 }
@@ -456,6 +462,7 @@ button {
 .department-task-card strong,
 .department-task-card span {
   display: block;
+  overflow-wrap: anywhere;
 }
 
 .department-task-card span {
@@ -468,6 +475,7 @@ button {
   margin: 8px 0 0;
   color: var(--text);
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .department-task-actions {
@@ -558,6 +566,7 @@ button {
 .my-task-card p {
   margin: 8px 0 0;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .my-task-actions {
@@ -765,6 +774,22 @@ button {
 .remark-card-title {
   font-size: 1.05rem;
   font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.remark-document-text {
+  color: var(--text-muted);
+  margin-top: 4px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.remark-document-text:hover,
+.remark-document-text:focus-within {
+  -webkit-line-clamp: unset;
 }
 
 .status-pills {
@@ -794,6 +819,11 @@ button {
 .status-pill:not(.active):hover {
   background: var(--surface-muted);
   color: var(--text);
+}
+
+.status-pill:disabled {
+  cursor: default;
+  opacity: 0.75;
 }
 
 .status-badge {
@@ -829,6 +859,16 @@ button {
   padding: 12px;
   margin-bottom: 14px;
   white-space: pre-wrap;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.remark-text:hover,
+.remark-text:focus-within {
+  -webkit-line-clamp: unset;
 }
 
 .card-actions {

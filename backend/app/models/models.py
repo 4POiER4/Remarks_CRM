@@ -108,6 +108,7 @@ class LetterAttachment(Base):
   letter_id: Mapped[int] = mapped_column(ForeignKey("letters.id"), nullable=False, index=True)
   filename: Mapped[str] = mapped_column(String(255), nullable=False)
   stored_name: Mapped[str] = mapped_column(String(255), nullable=False)
+  content_hash: Mapped[str | None] = mapped_column(String(64), index=True)
   content_type: Mapped[str | None] = mapped_column(String(100))
   file_size: Mapped[int] = mapped_column(Integer, default=0)
   uploaded_by: Mapped[str | None] = mapped_column(String(255))

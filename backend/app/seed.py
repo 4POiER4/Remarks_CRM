@@ -48,6 +48,10 @@ def migrate_schema() -> None:
     return
 
   with engine.begin() as connection:
+    attachment_columns = _table_columns("letter_attachments")
+    if attachment_columns and "content_hash" not in attachment_columns:
+      connection.exec_driver_sql("ALTER TABLE letter_attachments ADD COLUMN content_hash VARCHAR(64)")
+
     if not _table_columns("notifications"):
       if engine.dialect.name == "sqlite":
         connection.exec_driver_sql(

@@ -43,6 +43,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-1024}
+      ALLOWED_UPLOAD_EXTENSIONS: ${ALLOWED_UPLOAD_EXTENSIONS:-.doc,.docx,.xls,.xlsx,.xlsm,.pdf,.jpg,.jpeg,.png,.txt}
       DEV_ADMIN_USERNAME: ${DEV_ADMIN_USERNAME:-admin}
       DEV_ADMIN_PASSWORD: ${DEV_ADMIN_PASSWORD:-admin}
       LDAP_ENABLED: ${LDAP_ENABLED:-false}

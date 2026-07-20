@@ -9,6 +9,24 @@ from app.models.models import Letter, ProjectObject, Remark
 COLUMN_MAP = {
   "от кого письмо/задание": "from_whom",
   "от кого письмо": "from_whom",
+  "от кого": "from_whom",
+  "№ письма": "letter_number",
+  "номер письма": "letter_number",
+  "n письма": "letter_number",
+  "дата письма": "letter_date",
+  "сопровод лэп": "lep_accompaniment",
+  "сопровод леп": "lep_accompaniment",
+  "дата сопровода лэп": "lep_accompaniment_date",
+  "дата сопровода леп": "lep_accompaniment_date",
+  "объект": "object_name",
+  "основной объект": "object_name",
+  "подобъект": "subobject_name",
+  "подобъект/объект": "subobject_name",
+  "замечание к документу": "document_remark",
+  "вид документа": "document_type",
+  "замечание": "remark_text",
+  "от кого письмо/задание": "from_whom",
+  "от кого письмо": "from_whom",
   "№ письма": "letter_number",
   "номер письма": "letter_number",
   "дата письма": "letter_date",
@@ -27,7 +45,7 @@ COLUMN_MAP = {
 def _normalize_header(value) -> str:
   if value is None:
     return ""
-  return str(value).strip().lower()
+  return " ".join(str(value).replace("\xa0", " ").strip().lower().replace("\u0451", "\u0435").split())
 
 
 def _parse_date(value) -> date | None:
@@ -116,16 +134,20 @@ def import_remarks_from_excel(content: bytes, db: Session) -> tuple[int, int, li
   sheet = workbook.active
   rows = sheet.iter_rows(values_only=True)
 
-  try:
-    header_row = next(rows)
-  except StopIteration:
-    return 0, 0, ["Файл пуст"]
-
   field_indexes: dict[str, int] = {}
-  for index, cell in enumerate(header_row):
-    normalized = _normalize_header(cell)
-    if normalized in COLUMN_MAP:
-      field_indexes[COLUMN_MAP[normalized]] = index
+  header_row_number = 0
+  for row_number, header_row in enumerate(rows, start=1):
+    candidate_indexes: dict[str, int] = {}
+    for index, cell in enumerate(header_row):
+      normalized = _normalize_header(cell)
+      if normalized in COLUMN_MAP:
+        candidate_indexes[COLUMN_MAP[normalized]] = index
+    if len(candidate_indexes) >= 2 or {"document_remark", "remark_text"} & set(candidate_indexes):
+      field_indexes = candidate_indexes
+      header_row_number = row_number
+      break
+    if row_number >= 30:
+      break
 
   if not field_indexes:
     return 0, 0, ["Не найдены заголовки столбцов. Проверьте первую строку Excel."]
@@ -136,7 +158,7 @@ def import_remarks_from_excel(content: bytes, db: Session) -> tuple[int, int, li
   object_cache: dict[tuple[str, str | None], ProjectObject] = {}
   letter_cache: dict[tuple, Letter] = {}
 
-  for row_number, row in enumerate(rows, start=2):
+  for row_number, row in enumerate(rows, start=header_row_number + 1):
     if not row or all(cell is None or str(cell).strip() == "" for cell in row):
       skipped += 1
       continue

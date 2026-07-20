@@ -1,10 +1,11 @@
 import math
 import os
 import uuid
+from hashlib import sha256
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Query, Session, joinedload
 
 from app.auth import can_manage_all
@@ -255,12 +256,35 @@ async def save_letter_attachment(
   if not file.filename:
     raise HTTPException(status_code=400, detail="Имя файла не указано")
 
+  extension = Path(file.filename).suffix.lower()
+  if extension not in settings.allowed_upload_extensions:
+    allowed = ", ".join(sorted(settings.allowed_upload_extensions))
+    raise HTTPException(status_code=400, detail=f"Можно прикреплять только файлы: {allowed}")
+
   content = await file.read()
   if len(content) > settings.max_upload_size_bytes:
     raise HTTPException(
       status_code=400,
       detail=f"Файл слишком большой (макс. {settings.max_upload_size_mb} МБ)",
     )
+
+  content_hash = sha256(content).hexdigest()
+  duplicate = (
+    db.query(LetterAttachment)
+    .filter(
+      LetterAttachment.letter_id == letter.id,
+      or_(
+        LetterAttachment.content_hash == content_hash,
+        (
+          (LetterAttachment.filename == file.filename)
+          & (LetterAttachment.file_size == len(content))
+        ),
+      ),
+    )
+    .first()
+  )
+  if duplicate:
+    raise HTTPException(status_code=400, detail="Вы прикрепляете файл, который уже прикреплен!")
 
   upload_root = ensure_upload_dir()
   letter_dir = upload_root / str(letter.id)
@@ -274,6 +298,7 @@ async def save_letter_attachment(
     letter_id=letter.id,
     filename=file.filename,
     stored_name=stored_name,
+    content_hash=content_hash,
     content_type=file.content_type,
     file_size=len(content),
     uploaded_by=uploaded_by,

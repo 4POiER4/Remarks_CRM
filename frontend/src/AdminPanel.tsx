@@ -213,6 +213,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   const departmentsCount = departments.filter((item) => item.kind === "department").length;
   const subcontractorsCount = departments.filter((item) => item.kind === "subcontractor").length;
+  const activeDepartmentsTabLabel = kindFilter ? DEPARTMENT_KIND_LABELS[kindFilter] : "Отделы";
 
   return (
     <div className="admin-page">
@@ -239,7 +240,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             className={`admin-tab ${tab === "departments" ? "active" : ""}`}
             onClick={() => setTab("departments")}
           >
-            Отделы
+            {activeDepartmentsTabLabel}
           </button>
         ) : null}
         {canManageUsers(user.role) ? (

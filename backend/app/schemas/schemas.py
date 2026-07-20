@@ -144,6 +144,7 @@ class LetterAttachmentRead(BaseModel):
   filename: str
   content_type: str | None = None
   file_size: int
+  content_hash: str | None = None
   uploaded_by: str | None = None
   created_at: datetime
 

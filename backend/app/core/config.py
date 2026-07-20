@@ -24,7 +24,15 @@ class Settings:
     self.cache_ttl_seconds = int(os.getenv("CACHE_TTL_SECONDS", "60"))
 
     self.upload_dir = os.getenv("UPLOAD_DIR", "uploads")
-    self.max_upload_size_mb = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
+    self.max_upload_size_mb = int(os.getenv("MAX_UPLOAD_SIZE_MB", "1024"))
+    self.allowed_upload_extensions = {
+      extension.strip().lower()
+      for extension in os.getenv(
+        "ALLOWED_UPLOAD_EXTENSIONS",
+        ".doc,.docx,.xls,.xlsx,.xlsm,.pdf,.jpg,.jpeg,.png,.txt",
+      ).split(",")
+      if extension.strip()
+    }
 
     self.cors_origins = [
       origin.strip()
