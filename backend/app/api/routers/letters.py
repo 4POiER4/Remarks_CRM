@@ -8,7 +8,7 @@ from app.auth import get_current_user, require_roles
 from app.core.cache import invalidate_remarks_cache
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.models.models import Letter, LetterAttachment, Remark, User, UserRole
+from app.models.models import Letter, LetterAttachment, Notification, Remark, User, UserRole
 from app.schemas.schemas import (
   LetterAttachmentRead,
   LetterCreate,
@@ -116,6 +116,11 @@ def delete_letter(
     for result in remark.results:
       delete_remark_result_file(result)
     delete_result_attachment_file(remark)
+  remark_ids = [remark.id for remark in letter.remarks]
+  if remark_ids:
+    db.query(Notification).filter(Notification.remark_id.in_(remark_ids)).delete(
+      synchronize_session=False
+    )
   db.delete(letter)
   db.commit()
   invalidate_remarks_cache()

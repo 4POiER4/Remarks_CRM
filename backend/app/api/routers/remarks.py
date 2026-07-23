@@ -563,6 +563,9 @@ def delete_remark(
   for result in remark.results:
     delete_remark_result_file(result)
   delete_result_attachment_file(remark)
+  db.query(Notification).filter(Notification.remark_id == remark.id).delete(
+    synchronize_session=False
+  )
   db.delete(remark)
   db.commit()
   invalidate_remarks_cache()
